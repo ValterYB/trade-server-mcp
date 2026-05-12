@@ -70,7 +70,12 @@ function toolHandler<T>(
       const result = await fn(params);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      let message = err instanceof Error ? err.message : String(err);
+      // Undici "fetch failed" hides real cause — extract it
+      if (err instanceof Error && err.cause) {
+        const cause = err.cause instanceof Error ? err.cause.message : String(err.cause);
+        message = `${message} (cause: ${cause})`;
+      }
       console.error(`Tool error: ${message}`);
       return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true };
     }
