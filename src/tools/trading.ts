@@ -1,0 +1,219 @@
+import { z } from "zod";
+import { RestClient } from "../rest-client.js";
+
+export const placeOrderSchema = z.object({
+  accountId: z.number().describe("Trading account ID (login)"),
+  symbol: z.string().describe("Symbol name, e.g. EURUSD"),
+  side: z.enum(["buy", "sell"]).describe("Order side"),
+  quantity: z.number().positive().describe("Volume in lots, e.g. 0.1"),
+  orderType: z
+    .enum(["Market", "Limit", "Stop", "StopLimit", "CloseBy"])
+    .describe("Order type"),
+  timeInForce: z
+    .enum(["FOK", "IOC", "GTC", "GTD", "Day", "Ms"])
+    .describe("Time in force. Use IOC or FOK for Market orders"),
+  limitPrice: z.number().optional().describe("Limit price (for Limit/StopLimit)"),
+  stopPrice: z.number().optional().describe("Stop price (for Stop/StopLimit)"),
+  stopLoss: z.number().optional().describe("Stop loss price"),
+  takeProfit: z.number().optional().describe("Take profit price"),
+  positionId: z.number().optional().describe("Position ID (for closing specific position)"),
+  positionById: z.number().optional().describe("PositionBy ID (for CloseBy)"),
+  marginCheck: z.boolean().optional().describe("Perform margin check. Default true"),
+  comment: z.string().optional().describe("Order comment"),
+});
+
+export async function placeOrder(
+  client: RestClient,
+  params: z.infer<typeof placeOrderSchema>
+) {
+  const body: Record<string, unknown> = {
+    A: params.accountId,
+    s: params.symbol,
+    S: params.side,
+    q: params.quantity,
+    t: params.orderType,
+    tif: params.timeInForce,
+  };
+
+  if (params.limitPrice !== undefined) body.lp = params.limitPrice;
+  if (params.stopPrice !== undefined) body.sp = params.stopPrice;
+  if (params.stopLoss !== undefined) body.sl = params.stopLoss;
+  if (params.takeProfit !== undefined) body.tp = params.takeProfit;
+  if (params.positionId !== undefined) body.pi = params.positionId;
+  if (params.positionById !== undefined) body.pbi = params.positionById;
+  if (params.marginCheck !== undefined) body.mc = params.marginCheck;
+  if (params.comment !== undefined) body.ct = params.comment;
+
+  return client.post("/admin/orders/edit", body);
+}
+
+export const cancelOrderSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  orderId: z.number().describe("Order ID to cancel"),
+});
+
+export async function cancelOrder(
+  client: RestClient,
+  params: z.infer<typeof cancelOrderSchema>
+) {
+  return client.post("/admin/orders/delete", {
+    A: params.accountId,
+    id: params.orderId,
+  });
+}
+
+export const modifyOrderSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  orderId: z.number().describe("Order ID to modify"),
+  quantity: z.number().optional().describe("New remaining quantity in lots"),
+  limitPrice: z.number().optional().describe("New limit price"),
+  stopPrice: z.number().optional().describe("New stop price"),
+});
+
+export async function modifyOrder(
+  client: RestClient,
+  params: z.infer<typeof modifyOrderSchema>
+) {
+  const body: Record<string, unknown> = {
+    id: params.orderId,
+    A: params.accountId,
+  };
+  if (params.quantity !== undefined) body.q = params.quantity;
+  if (params.limitPrice !== undefined) body.lp = params.limitPrice;
+  if (params.stopPrice !== undefined) body.sp = params.stopPrice;
+
+  return client.post("/admin/orders/edit", body);
+}
+
+export const getWorkingOrdersSchema = z.object({
+  accountId: z.number().optional().describe("Filter by account ID"),
+  symbol: z.string().optional().describe("Filter by symbol"),
+});
+
+export async function getWorkingOrders(
+  client: RestClient,
+  params: z.infer<typeof getWorkingOrdersSchema>
+) {
+  const body: Record<string, unknown> = {};
+  if (params.accountId !== undefined) body.A = params.accountId;
+  if (params.symbol !== undefined) body.s = params.symbol;
+
+  return client.post("/admin/orders/active", body);
+}
+
+export const getOpenPositionsSchema = z.object({
+  accountId: z.number().optional().describe("Filter by account ID"),
+  symbol: z.string().optional().describe("Filter by symbol"),
+});
+
+export async function getOpenPositions(
+  client: RestClient,
+  params: z.infer<typeof getOpenPositionsSchema>
+) {
+  const body: Record<string, unknown> = {};
+  if (params.accountId !== undefined) body.A = params.accountId;
+  if (params.symbol !== undefined) body.s = params.symbol;
+
+  return client.post("/admin/positions/query", body);
+}
+
+export const closePositionSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  positionId: z.number().describe("Position ID to close"),
+  quantity: z.number().optional().describe("Partial close volume in lots. Omit for full close"),
+});
+
+export async function closePosition(
+  client: RestClient,
+  params: z.infer<typeof closePositionSchema>
+) {
+  // Get position details first to know symbol and side
+  const result = (await client.post("/admin/positions/query", {
+    A: params.accountId,
+  })) as { positions: Array<{ id: number; s: string; S: string; q: number }> };
+
+  const position = (result.positions || []).find((p) => p.id === params.positionId);
+  if (!position) {
+    throw new Error(`Position ${params.positionId} not found`);
+  }
+
+  // Place opposite market order to close
+  const closeSide = position.S === "buy" ? "sell" : "buy";
+  const qty = params.quantity ?? position.q;
+
+  return client.post("/admin/orders/edit", {
+    A: params.accountId,
+    s: position.s,
+    S: closeSide,
+    q: qty,
+    t: "Market",
+    tif: "IOC",
+    pi: params.positionId,
+    mc: false,
+  });
+}
+
+export const modifyPositionSltpSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  positionId: z.number().describe("Position ID"),
+  stopLoss: z.number().optional().describe("New stop loss price (0 to remove)"),
+  takeProfit: z.number().optional().describe("New take profit price (0 to remove)"),
+});
+
+export async function modifyPositionSltp(
+  client: RestClient,
+  params: z.infer<typeof modifyPositionSltpSchema>
+) {
+  const body: Record<string, unknown> = {
+    A: params.accountId,
+    id: params.positionId,
+  };
+  if (params.stopLoss !== undefined) body.sl = params.stopLoss;
+  if (params.takeProfit !== undefined) body.tp = params.takeProfit;
+
+  return client.post("/admin/positions/sltp", body);
+}
+
+export const getTradeHistorySchema = z.object({
+  accountId: z.number().optional().describe("Filter by account ID"),
+  symbol: z.string().optional().describe("Filter by symbol"),
+  from: z.number().optional().describe("Start time (microseconds since epoch)"),
+  to: z.number().optional().describe("End time (microseconds since epoch)"),
+  limit: z.number().optional().describe("Max results to return"),
+});
+
+export async function getTradeHistory(
+  client: RestClient,
+  params: z.infer<typeof getTradeHistorySchema>
+) {
+  const body: Record<string, unknown> = {};
+  if (params.accountId !== undefined) body.A = params.accountId;
+  if (params.symbol !== undefined) body.s = params.symbol;
+  if (params.from !== undefined) body.from = params.from;
+  if (params.to !== undefined) body.to = params.to;
+  if (params.limit !== undefined) body.limit = params.limit;
+
+  return client.post("/admin/trades/query", body);
+}
+
+export const getOrderHistorySchema = z.object({
+  accountId: z.number().optional().describe("Filter by account ID"),
+  symbol: z.string().optional().describe("Filter by symbol"),
+  from: z.number().optional().describe("Start time (microseconds since epoch)"),
+  to: z.number().optional().describe("End time (microseconds since epoch)"),
+  limit: z.number().optional().describe("Max results to return"),
+});
+
+export async function getOrderHistory(
+  client: RestClient,
+  params: z.infer<typeof getOrderHistorySchema>
+) {
+  const body: Record<string, unknown> = {};
+  if (params.accountId !== undefined) body.A = params.accountId;
+  if (params.symbol !== undefined) body.s = params.symbol;
+  if (params.from !== undefined) body.from = params.from;
+  if (params.to !== undefined) body.to = params.to;
+  if (params.limit !== undefined) body.limit = params.limit;
+
+  return client.post("/admin/orders/history", body);
+}
