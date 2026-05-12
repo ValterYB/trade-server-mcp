@@ -44,19 +44,20 @@ MCP server for Your Bourse Trade Server Admin API.
 1. Set environment variables:
    - `YB_API_KEY` — Public API token
    - `YB_SECRET_KEY` — Private/secret key for HMAC signing
-   - `YB_BASE_URL` — Trade Server URL (e.g. `https://qa2.yourbourse.trade`)
+   - `YB_BASE_URL` — Trade Server URL (e.g. `https://your-instance.yourbourse.trade:port`)
 
 2. Add to VS Code MCP settings (`.vscode/mcp.json` or user settings):
 ```json
 {
   "servers": {
     "trade-server": {
-      "command": "node",
-      "args": ["C:\\Users\\paata\\trade-server-mcp\\dist\\index.js"],
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp"],
       "env": {
         "YB_API_KEY": "your-public-key",
         "YB_SECRET_KEY": "your-secret-key",
-        "YB_BASE_URL": "https://qa2.yourbourse.trade"
+        "YB_BASE_URL": "https://your-instance.yourbourse.trade:port"
       }
     }
   }
