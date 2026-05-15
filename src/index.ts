@@ -204,9 +204,9 @@ async function main() {
 
   server.tool(
     "get_balances",
-    "Get balances for multiple accounts",
+    "Get account balances, equity, margin, P/L for all accounts",
     getBalancesSchema.shape,
-    toolHandler((params) => getBalances(restClient, params))
+    toolHandler(() => getBalances(restClient))
   );
 
   // === MARKET DATA TOOLS ===

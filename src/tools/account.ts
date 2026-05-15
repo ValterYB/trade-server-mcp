@@ -78,37 +78,22 @@ export async function getTransferHistory(
   return client.post("/admin/transfers/query", body);
 }
 
-export const getBalancesSchema = z.object({
-  accountIds: z.array(z.number()).optional().describe("List of account IDs to filter by"),
-  groupIds: z.array(z.number()).optional().describe("List of group IDs to filter by"),
-  maxResults: z.number().optional().describe("Max results (1-10000, default 10000)"),
-});
+export const getBalancesSchema = z.object({});
 
-export async function getBalances(
-  client: RestClient,
-  params: z.infer<typeof getBalancesSchema>
-) {
-  const body: Record<string, unknown> = {};
-  if (params.accountIds?.length) {
-    body.accountFilter = { accounts: params.accountIds };
-  } else if (params.groupIds?.length) {
-    body.accountFilter = { groups: params.groupIds };
-  }
-  if (params.maxResults !== undefined) body.maxResults = params.maxResults;
+export async function getBalances(client: RestClient) {
+  // Get all accounts
+  const result = (await client.get("/admin/accounts/query")) as { accounts?: Array<{ id?: number }> };
+  const accounts = result.accounts ?? [];
 
-  try {
-    return await client.post("/admin/accounts/balances", body);
-  } catch {
-    // Fallback: balances endpoint may be unavailable on some servers.
-    // Use account states which includes balance info.
-    const statesBody: Record<string, unknown> = {};
-    if (params.accountIds?.length) {
-      statesBody.accountFilter = { accounts: params.accountIds };
-    } else if (params.groupIds?.length) {
-      statesBody.accountFilter = { groups: params.groupIds };
-    }
-    statesBody.maxResults = params.maxResults ?? 100;
-    const states = await client.post<{ accountStates: unknown[] }>("/admin/accounts/states/query", statesBody);
-    return { _fallback: "account_states", note: "Balances endpoint unavailable, showing account states instead", data: states.accountStates ?? states };
+  // Extract account IDs
+  const ids: number[] = [];
+  for (const acc of accounts) {
+    if (acc.id !== undefined) ids.push(acc.id);
   }
+
+  if (ids.length === 0) return { accounts, note: "No account IDs found" };
+
+  // Query states for all accounts at once
+  const states = await client.post("/admin/accounts/states/query", { A: ids });
+  return states;
 }

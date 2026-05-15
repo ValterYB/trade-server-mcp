@@ -110,6 +110,7 @@ export class WsClient {
   }
 
   async unsubscribe(channel: string, payload: Record<string, unknown>, reqId: string): Promise<void> {
+    if (!this.ws || !this.connected) return;
     const msg = {
       m: "unsubscribe" as const,
       c: channel,
