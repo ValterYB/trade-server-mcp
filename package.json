@@ -7,9 +7,9 @@
   "bin": {
     "trade-server-mcp": "dist/index.js"
   },
-  "files": ["dist"],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsc --watch"
   },
