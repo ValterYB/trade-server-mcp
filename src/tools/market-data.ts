@@ -198,9 +198,9 @@ export async function getIndicator(
     symbolSelector: { symbolName: params.symbolName, groupId: params.groupId ?? 1 },
     interval: params.interval,
     maxResults: maxCandles,
-  }) as { candles?: Array<{ o: number; h: number; l: number; c: number; v?: number; t: number }> };
+  }) as { d?: Array<{ o: number; h: number; l: number; c: number; v?: number; t: number }> };
 
-  const candles = candleResult.candles ?? [];
+  const candles = candleResult.d ?? [];
   if (candles.length < period) {
     throw new Error(`Insufficient data: got ${candles.length} candles, need at least ${period}`);
   }
