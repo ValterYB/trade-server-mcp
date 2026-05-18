@@ -217,3 +217,140 @@ export async function getOrderHistory(
 
   return client.post("/admin/orders/history", body);
 }
+
+// === BULK OPERATIONS ===
+
+export const cancelAllOrdersSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  symbol: z.string().optional().describe("Only cancel orders for this symbol"),
+});
+
+export async function cancelAllOrders(
+  client: RestClient,
+  params: z.infer<typeof cancelAllOrdersSchema>
+) {
+  // Always fetch all orders for the account (server-side symbol filter is unreliable)
+  const result = (await client.post("/admin/orders/active", { A: params.accountId })) as {
+    orders: Array<{ id: number; s: string; st: string }>;
+  };
+
+  let orders = result.orders || [];
+
+  // Client-side symbol filter
+  if (params.symbol) {
+    orders = orders.filter((o) => o.s === params.symbol);
+  }
+
+  if (orders.length === 0) {
+    return { cancelled: 0, message: "No working orders found" };
+  }
+
+  const results: Array<{ orderId: number; symbol: string; status: string }> = [];
+  for (const order of orders) {
+    try {
+      await client.post("/admin/orders/delete", { A: params.accountId, id: order.id });
+      results.push({ orderId: order.id, symbol: order.s, status: "cancelled" });
+    } catch (e) {
+      results.push({ orderId: order.id, symbol: order.s, status: `failed: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }
+
+  return { cancelled: results.filter((r) => r.status === "cancelled").length, total: orders.length, results };
+}
+
+export const closeAllPositionsSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  symbol: z.string().optional().describe("Only close positions for this symbol"),
+});
+
+export async function closeAllPositions(
+  client: RestClient,
+  params: z.infer<typeof closeAllPositionsSchema>
+) {
+  // Always fetch all positions for the account (server-side symbol filter is unreliable)
+  const result = (await client.post("/admin/positions/query", { A: params.accountId })) as {
+    positions: Array<{ id: number; s: string; S: string; q: number }>;
+  };
+
+  let positions = result.positions || [];
+
+  // Client-side symbol filter
+  if (params.symbol) {
+    positions = positions.filter((p) => p.s === params.symbol);
+  }
+
+  if (positions.length === 0) {
+    return { closed: 0, message: "No open positions found" };
+  }
+
+  const results: Array<{ positionId: number; symbol: string; side: string; quantity: number; status: string }> = [];
+  for (const pos of positions) {
+    try {
+      const closeSide = pos.S === "buy" ? "sell" : "buy";
+      await client.post("/admin/orders/edit", {
+        A: params.accountId,
+        s: pos.s,
+        S: closeSide,
+        q: pos.q,
+        t: "Market",
+        tif: "IOC",
+        pi: pos.id,
+        mc: false,
+      });
+      results.push({ positionId: pos.id, symbol: pos.s, side: pos.S, quantity: pos.q, status: "closed" });
+    } catch (e) {
+      results.push({ positionId: pos.id, symbol: pos.s, side: pos.S, quantity: pos.q, status: `failed: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }
+
+  return { closed: results.filter((r) => r.status === "closed").length, total: positions.length, results };
+}
+
+export const closeBySchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  positionId: z.number().describe("Position ID to close"),
+  positionById: z.number().describe("Opposite position ID to close against"),
+});
+
+export async function closeBy(
+  client: RestClient,
+  params: z.infer<typeof closeBySchema>
+) {
+  // Get position details to determine symbol and quantity
+  const result = (await client.post("/admin/positions/query", {
+    A: params.accountId,
+  })) as { positions: Array<{ id: number; s: string; S: string; q: number }> };
+
+  const position = (result.positions || []).find((p) => p.id === params.positionId);
+  if (!position) {
+    throw new Error(`Position ${params.positionId} not found`);
+  }
+
+  const byPosition = (result.positions || []).find((p) => p.id === params.positionById);
+  if (!byPosition) {
+    throw new Error(`Position ${params.positionById} not found`);
+  }
+
+  if (position.s !== byPosition.s) {
+    throw new Error(`Positions must be on the same symbol (got ${position.s} and ${byPosition.s})`);
+  }
+
+  if (position.S === byPosition.S) {
+    throw new Error(`Positions must be on opposite sides (both are ${position.S})`);
+  }
+
+  // Use the smaller quantity
+  const qty = Math.min(position.q, byPosition.q);
+
+  return client.post("/admin/orders/edit", {
+    A: params.accountId,
+    s: position.s,
+    S: position.S === "buy" ? "sell" : "buy",
+    q: qty,
+    t: "CloseBy",
+    tif: "IOC",
+    pi: params.positionId,
+    pbi: params.positionById,
+    mc: false,
+  });
+}

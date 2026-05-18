@@ -17,6 +17,9 @@ import {
   modifyPositionSltpSchema, modifyPositionSltp,
   getTradeHistorySchema, getTradeHistory,
   getOrderHistorySchema, getOrderHistory,
+  cancelAllOrdersSchema, cancelAllOrders,
+  closeAllPositionsSchema, closeAllPositions,
+  closeBySchema, closeBy,
 } from "./tools/trading.js";
 
 import {
@@ -163,6 +166,27 @@ async function main() {
     "Get historical orders",
     getOrderHistorySchema.shape,
     toolHandler((params) => getOrderHistory(restClient, params))
+  );
+
+  server.tool(
+    "cancel_all_orders",
+    "Cancel all working orders on an account (optionally filter by symbol)",
+    cancelAllOrdersSchema.shape,
+    toolHandler((params) => cancelAllOrders(restClient, params))
+  );
+
+  server.tool(
+    "close_all_positions",
+    "Close all open positions on an account (optionally filter by symbol)",
+    closeAllPositionsSchema.shape,
+    toolHandler((params) => closeAllPositions(restClient, params))
+  );
+
+  server.tool(
+    "close_by",
+    "Close two opposite positions against each other (hedge close)",
+    closeBySchema.shape,
+    toolHandler((params) => closeBy(restClient, params))
   );
 
   // === ACCOUNT TOOLS ===
