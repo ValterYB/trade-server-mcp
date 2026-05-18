@@ -20,6 +20,7 @@ import {
   cancelAllOrdersSchema, cancelAllOrders,
   closeAllPositionsSchema, closeAllPositions,
   closeBySchema, closeBy,
+  modifyOrderSltpSchema, modifyOrderSltp,
 } from "./tools/trading.js";
 
 import {
@@ -33,9 +34,11 @@ import {
 
 import {
   getQuoteSchema, getQuote,
+  getQuotesSchema, getQuotes,
   getMarketDepthSchema, getMarketDepth,
   getSymbolsSchema, getSymbols,
   getCandlesSchema, getCandles,
+  getConversionRateSchema, getConversionRate,
 } from "./tools/market-data.js";
 
 import {
@@ -189,6 +192,13 @@ async function main() {
     toolHandler((params) => closeBy(restClient, params))
   );
 
+  server.tool(
+    "modify_order_sltp",
+    "Modify stop loss and/or take profit on a pending order. Omit sl/tp to cancel that side.",
+    modifyOrderSltpSchema.shape,
+    toolHandler((params) => modifyOrderSltp(restClient, params))
+  );
+
   // === ACCOUNT TOOLS ===
 
   server.tool(
@@ -261,6 +271,20 @@ async function main() {
     "Get OHLC chart candles for a symbol",
     getCandlesSchema.shape,
     toolHandler((params) => getCandles(restClient, params))
+  );
+
+  server.tool(
+    "get_conversion_rate",
+    "Get currency conversion rate (e.g. EUR to USD) within a group context",
+    getConversionRateSchema.shape,
+    toolHandler((params) => getConversionRate(restClient, params))
+  );
+
+  server.tool(
+    "get_quotes",
+    "Get live bid/ask quotes for multiple symbols at once",
+    getQuotesSchema.shape,
+    toolHandler((params) => getQuotes(wsClient, params))
   );
 
   // === CONFIGURATION TOOLS ===

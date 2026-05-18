@@ -107,3 +107,65 @@ export async function getCandles(
 
   return client.post("/admin/charts/get", body);
 }
+
+// === CONVERSION ===
+
+export const getConversionRateSchema = z.object({
+  groupId: z.number().describe("Group ID for conversion context"),
+  from: z.string().describe("Source currency code, e.g. EUR"),
+  to: z.string().describe("Target currency code, e.g. USD"),
+});
+
+export async function getConversionRate(
+  client: RestClient,
+  params: z.infer<typeof getConversionRateSchema>
+) {
+  return client.post("/admin/conversion-rate/single", {
+    groupId: params.groupId,
+    from: params.from,
+    to: params.to,
+  });
+}
+
+// === MULTI-SYMBOL QUOTES ===
+
+export const getQuotesSchema = z.object({
+  symbols: z.array(z.string()).min(1).describe("Array of symbol names, e.g. ['EURUSD', 'GBPUSD']"),
+  groupId: z.number().optional().describe("Group ID (default 1)"),
+});
+
+export async function getQuotes(
+  wsClient: WsClient,
+  params: z.infer<typeof getQuotesSchema>
+) {
+  if (!wsClient.isConnected) {
+    await wsClient.connect();
+  }
+
+  const groupId = params.groupId ?? 1;
+
+  // Subscribe to all symbols in parallel
+  const results = await Promise.all(
+    params.symbols.map(async (symbol) => {
+      try {
+        const data = await wsClient.getSnapshot("L1", {
+          s: symbol,
+          g: groupId,
+          streaming: true,
+        }, { timeoutMs: 3000 });
+
+        // Extract quote data
+        const quotes: unknown[] = [];
+        for (const msg of data) {
+          const m = msg as { d?: unknown[] };
+          if (m.d) quotes.push(...m.d);
+        }
+        return { symbol, quote: quotes.length > 0 ? quotes[quotes.length - 1] : null };
+      } catch (e) {
+        return { symbol, quote: null, error: e instanceof Error ? e.message : String(e) };
+      }
+    })
+  );
+
+  return results;
+}

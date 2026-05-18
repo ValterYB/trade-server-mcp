@@ -218,6 +218,29 @@ export async function getOrderHistory(
   return client.post("/admin/orders/history", body);
 }
 
+// === ORDER SL/TP MODIFICATION ===
+
+export const modifyOrderSltpSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  orderId: z.number().describe("Order ID to modify"),
+  stopLoss: z.number().optional().describe("New stop loss price. Omit to cancel existing SL."),
+  takeProfit: z.number().optional().describe("New take profit price. Omit to cancel existing TP."),
+});
+
+export async function modifyOrderSltp(
+  client: RestClient,
+  params: z.infer<typeof modifyOrderSltpSchema>
+) {
+  const body: Record<string, unknown> = {
+    A: params.accountId,
+    id: params.orderId,
+  };
+  if (params.stopLoss !== undefined) body.sl = params.stopLoss;
+  if (params.takeProfit !== undefined) body.tp = params.takeProfit;
+
+  return client.post("/admin/orders/sltp", body);
+}
+
 // === BULK OPERATIONS ===
 
 export const cancelAllOrdersSchema = z.object({
