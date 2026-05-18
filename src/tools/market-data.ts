@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RestClient } from "../rest-client.js";
 import { WsClient } from "../ws-client.js";
+import * as ti from "technicalindicators";
 
 export const getQuoteSchema = z.object({
   symbol: z.string().describe("Symbol name, e.g. EURUSD"),
@@ -168,4 +169,97 @@ export async function getQuotes(
   );
 
   return results;
+}
+
+// === TECHNICAL INDICATORS ===
+
+export const getIndicatorSchema = z.object({
+  symbolName: z.string().describe("Symbol name, e.g. EURUSD"),
+  groupId: z.number().optional().describe("Group ID (default 1)"),
+  interval: z
+    .enum(["1M", "5M", "15M", "30M", "1H", "4H", "D", "W", "M"])
+    .describe("Candle interval: 1M, 5M, 15M, 30M, 1H, 4H, D, W, M"),
+  indicator: z
+    .enum(["RSI", "MACD", "EMA", "SMA", "BollingerBands", "ATR", "Stochastic", "ADX", "VWAP", "CCI"])
+    .describe("Indicator name"),
+  period: z.number().optional().describe("Lookback period (default 14)"),
+  candles: z.number().optional().describe("Number of candles to fetch (default 100, max 1000)"),
+});
+
+export async function getIndicator(
+  client: RestClient,
+  params: z.infer<typeof getIndicatorSchema>
+) {
+  const period = params.period ?? 14;
+  const maxCandles = Math.min(params.candles ?? 100, 1000);
+
+  // Fetch candles
+  const candleResult = await client.post("/admin/charts/get", {
+    symbolSelector: { symbolName: params.symbolName, groupId: params.groupId ?? 1 },
+    interval: params.interval,
+    maxResults: maxCandles,
+  }) as { candles?: Array<{ o: number; h: number; l: number; c: number; v?: number; t: number }> };
+
+  const candles = candleResult.candles ?? [];
+  if (candles.length < period) {
+    throw new Error(`Insufficient data: got ${candles.length} candles, need at least ${period}`);
+  }
+
+  const close = candles.map((c) => c.c);
+  const high = candles.map((c) => c.h);
+  const low = candles.map((c) => c.l);
+  const open = candles.map((c) => c.o);
+  const volume = candles.map((c) => c.v ?? 0);
+
+  let values: unknown;
+  let meta: Record<string, unknown> = { indicator: params.indicator, period, candles: candles.length, interval: params.interval };
+
+  switch (params.indicator) {
+    case "RSI":
+      values = ti.rsi({ values: close, period });
+      break;
+    case "SMA":
+      values = ti.sma({ values: close, period });
+      break;
+    case "EMA":
+      values = ti.ema({ values: close, period });
+      break;
+    case "MACD": {
+      const result = ti.macd({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false });
+      values = result;
+      meta = { ...meta, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
+      break;
+    }
+    case "BollingerBands":
+      values = ti.bollingerbands({ values: close, period, stdDev: 2 });
+      meta = { ...meta, stdDev: 2 };
+      break;
+    case "ATR":
+      values = ti.atr({ high, low, close, period });
+      break;
+    case "Stochastic":
+      values = ti.stochastic({ high, low, close, period, signalPeriod: 3 });
+      meta = { ...meta, signalPeriod: 3 };
+      break;
+    case "ADX":
+      values = ti.adx({ high, low, close, period });
+      break;
+    case "VWAP":
+      values = ti.vwap({ high, low, close, volume });
+      break;
+    case "CCI":
+      values = ti.cci({ high, low, close, period });
+      break;
+  }
+
+  // Return last N values (most recent) to avoid overwhelming output
+  const arr = Array.isArray(values) ? values : [];
+  const latest = arr.slice(-20);
+
+  return {
+    symbol: params.symbolName,
+    ...meta,
+    current: latest.length > 0 ? latest[latest.length - 1] : null,
+    recent: latest,
+  };
 }

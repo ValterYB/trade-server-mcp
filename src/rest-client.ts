@@ -1,5 +1,43 @@
 import { AuthConfig, buildAuthHeaders } from "./auth.js";
 
+export class ApiError extends Error {
+  public readonly statusCode: number;
+  public readonly errorCode: string;
+  public readonly detail: string;
+
+  constructor(method: string, path: string, statusCode: number, body: string) {
+    let errorCode = "UNKNOWN";
+    let detail = body;
+
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.e) errorCode = parsed.e;
+      if (parsed.message) detail = parsed.message;
+      else if (parsed.error) detail = parsed.error;
+    } catch {
+      // body is not JSON — use as-is
+    }
+
+    // Map common HTTP status codes to semantic codes
+    if (errorCode === "UNKNOWN") {
+      if (statusCode === 400) errorCode = "BAD_REQUEST";
+      else if (statusCode === 401) errorCode = "UNAUTHORIZED";
+      else if (statusCode === 403) errorCode = "FORBIDDEN";
+      else if (statusCode === 404) errorCode = "NOT_FOUND";
+      else if (statusCode === 409) errorCode = "CONFLICT";
+      else if (statusCode === 412) errorCode = "PRECONDITION_FAILED";
+      else if (statusCode === 429) errorCode = "RATE_LIMITED";
+      else if (statusCode >= 500) errorCode = "SERVER_ERROR";
+    }
+
+    super(`${method} ${path} failed [${errorCode}]: ${detail}`);
+    this.name = "ApiError";
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
+    this.detail = detail;
+  }
+}
+
 export class RestClient {
   private config: AuthConfig;
   private etags: Map<string, string> = new Map();
@@ -26,7 +64,7 @@ export class RestClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`GET ${path} failed: ${res.status} ${text}`);
+      throw new ApiError("GET", path, res.status, text);
     }
 
     const newEtag = res.headers.get("ETag");
@@ -56,7 +94,7 @@ export class RestClient {
 
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(`POST ${path} failed: ${res.status} ${text}`);
+          throw new ApiError("POST", path, res.status, text);
         }
 
         const newEtag = res.headers.get("ETag");
@@ -99,7 +137,7 @@ export class RestClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`DELETE ${path} failed: ${res.status} ${text}`);
+      throw new ApiError("DELETE", path, res.status, text);
     }
 
     const text = await res.text();

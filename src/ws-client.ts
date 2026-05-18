@@ -14,6 +14,9 @@ export class WsClient {
     new Map();
   private connected = false;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnecting = false;
 
   constructor(config: AuthConfig) {
     this.config = config;
@@ -47,6 +50,7 @@ export class WsClient {
       this.ws.on("close", () => {
         this.connected = false;
         this.stopPingPong();
+        this.attemptReconnect();
       });
 
       this.ws.on("error", (err) => {
@@ -57,6 +61,34 @@ export class WsClient {
         this.ws?.pong(data);
       });
     });
+  }
+
+  /** Ensure connected, auto-reconnect if needed */
+  async ensureConnected(): Promise<void> {
+    if (this.connected) return;
+    this.reconnectAttempts = 0;
+    await this.connect();
+  }
+
+  private async attemptReconnect(): Promise<void> {
+    if (this.reconnecting || this.reconnectAttempts >= this.maxReconnectAttempts) return;
+    this.reconnecting = true;
+
+    while (this.reconnectAttempts < this.maxReconnectAttempts && !this.connected) {
+      this.reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 16000);
+      console.error(`WS reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+
+      try {
+        await this.connect();
+        this.reconnectAttempts = 0;
+        console.error("WS reconnected successfully");
+      } catch {
+        // continue retrying
+      }
+    }
+    this.reconnecting = false;
   }
 
   disconnect() {
@@ -137,6 +169,8 @@ export class WsClient {
     const results: unknown[] = [];
     const timeout = options?.timeoutMs ?? 3000;
     const reqId = `snapshot_${++this.reqCounter}`;
+
+    await this.ensureConnected();
 
     return new Promise(async (resolve) => {
       const timer = setTimeout(() => {

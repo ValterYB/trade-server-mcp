@@ -377,3 +377,39 @@ export async function closeBy(
     mc: false,
   });
 }
+
+// === FORCE DELETE ===
+
+export const forceDeleteOrderSchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+  orderId: z.number().describe("Order ID to force-delete (removes stuck/corrupted orders that normal cancel can't remove)"),
+});
+
+export async function forceDeleteOrder(
+  client: RestClient,
+  params: z.infer<typeof forceDeleteOrderSchema>
+) {
+  return client.post("/admin/orders/force/delete", {
+    A: params.accountId,
+    id: params.orderId,
+  });
+}
+
+// === ACCOUNT SUMMARY ===
+
+export const getAccountSummarySchema = z.object({
+  accountId: z.number().describe("Trading account ID"),
+});
+
+export async function getAccountSummary(
+  client: RestClient,
+  params: z.infer<typeof getAccountSummarySchema>
+) {
+  const [state, positions, orders] = await Promise.all([
+    client.post("/admin/accounts/states/query", { A: [params.accountId] }),
+    client.post("/admin/positions/query", { A: params.accountId }),
+    client.post("/admin/orders/active", { A: params.accountId }),
+  ]);
+
+  return { state, positions, orders };
+}

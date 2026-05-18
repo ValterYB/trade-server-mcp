@@ -52,6 +52,62 @@ export async function setOrderRouting(
   });
 }
 
+export const addRoutingRuleSchema = z.object({
+  actions: z.array(z.record(z.unknown())).describe("Actions array (e.g. [{type:'Execute',connectorId:1}])"),
+  filters: z.array(z.record(z.unknown())).optional().describe("Filters array (optional, e.g. [{type:'Symbol',value:'EURUSD'}])"),
+});
+
+export async function addRoutingRule(
+  client: RestClient,
+  params: z.infer<typeof addRoutingRuleSchema>
+) {
+  // Get current routing
+  const current = (await client.get("/admin/routing/query")) as {
+    version: number;
+    routing: Array<{ a: unknown[]; f?: unknown[] }>;
+  };
+
+  const newRule: { a: unknown[]; f?: unknown[] } = { a: params.actions };
+  if (params.filters) newRule.f = params.filters;
+
+  const updatedRouting = [...(current.routing || []), newRule];
+
+  return client.post("/admin/routing/edit", {
+    version: current.version,
+    routing: updatedRouting,
+  });
+}
+
+export const removeRoutingRuleSchema = z.object({
+  index: z.number().describe("Zero-based index of the routing rule to remove (use get_order_routing to see current rules)"),
+});
+
+export async function removeRoutingRule(
+  client: RestClient,
+  params: z.infer<typeof removeRoutingRuleSchema>
+) {
+  // Get current routing
+  const current = (await client.get("/admin/routing/query")) as {
+    version: number;
+    routing: Array<{ a: unknown[]; f?: unknown[] }>;
+  };
+
+  const routing = current.routing || [];
+  if (params.index < 0 || params.index >= routing.length) {
+    throw new Error(`Invalid index ${params.index}. Current routing has ${routing.length} rules (0-${routing.length - 1}).`);
+  }
+
+  const removed = routing[params.index];
+  const updatedRouting = routing.filter((_, i) => i !== params.index);
+
+  await client.post("/admin/routing/edit", {
+    version: current.version,
+    routing: updatedRouting,
+  });
+
+  return { removed, remainingRules: updatedRouting.length };
+}
+
 export const getLiquidityConnectorsSchema = z.object({});
 
 export async function getLiquidityConnectors(client: RestClient) {
