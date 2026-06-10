@@ -22,8 +22,9 @@ side by side.
 ## Why isn't this published on npm?
 
 Deliberately. The May 2026 wave of npm supply-chain attacks made "install from the registry"
-a real risk for software that holds trading credentials, so v1 is distributed as
-clone-and-build only: `git clone`, `npm ci` against the committed lockfile, `npm run build`.
+a real risk for software that holds trading credentials, so the server is distributed
+straight from this GitHub repository instead: run it with npx pinned to a release tag
+(immutable — there is no registry account to hijack), or clone and build from source.
 The reasoning is laid out in [Security → Supply-chain stance](./SECURITY.md#supply-chain-stance).
 
 ## Which Trade Server version do I need?
@@ -91,9 +92,9 @@ password (the same ones used in the broker's trading terminal), which work direc
 access — if you have one, configure it as `YB_API_KEY` + `YB_SECRET_KEY` with
 `YB_MODE=client`. Admin key pairs are issued only to broker administrators.
 
-## Did admin mode change in 1.0?
+## Did admin mode change in this release?
 
-No. Version 1.0 added client mode — the trader-scoped tool set with login/password and
+No. Version 1.1.0 added client mode — the trader-scoped tool set with login/password and
 token-pair sign-in — alongside the existing admin tools. Admin mode kept its tool set and its
 static key-pair authentication; if you were using it before, your configuration keeps working
 unchanged.
