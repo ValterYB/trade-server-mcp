@@ -33,10 +33,11 @@ positions, orders, account state, market data — works on older builds too, **a
 `YB_BASE_URL` points at the client (public) API port**, which is a different port from the
 admin API on the same server. (Pointing at the admin port is the most common reason sign-in
 is rejected — not an old server.) Two tools are the exception: `get_balances` and
-`get_limits` need a newer build — on older builds the server closes the connection for those
-calls, while everything else keeps working. There is no version check you can run from the
-MCP itself, so the practical answer is: ask your broker for the client API port, and ask them
-to update the server if you need those two tools. See
+`get_limits` are specified in the API but not yet implemented in Trade Server releases at
+the time of writing — the server closes the connection for those calls, while everything
+else keeps working. They will work automatically once a release ships them. The practical
+answer: ask your broker for the client API port, and about those two endpoints if you need
+them. See
 [Troubleshooting → Older Trade Server versions](./TROUBLESHOOTING.md#older-trade-server-versions-server-compatibility).
 
 ## What happens if my password changes while the MCP is running?

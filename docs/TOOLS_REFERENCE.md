@@ -313,8 +313,9 @@ Example:
 
 No parameters.
 
-> **Note:** May not be available on older Trade Server builds (the server closes the
-> connection); all other tools work.
+> **Note:** Specified in the Trade Server API but not yet implemented in server releases
+> at the time of writing — the server closes the connection when called. All other tools
+> work; this tool starts working automatically once a release ships the endpoint.
 
 Example:
 
@@ -347,8 +348,9 @@ Example:
 
 No parameters.
 
-> **Note:** May not be available on older Trade Server builds (the server closes the
-> connection); all other tools work.
+> **Note:** Specified in the Trade Server API but not yet implemented in server releases
+> at the time of writing — the server closes the connection when called. All other tools
+> work; this tool starts working automatically once a release ships the endpoint.
 
 Example:
 

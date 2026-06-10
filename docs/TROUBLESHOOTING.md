@@ -113,16 +113,17 @@ genuinely older builds, incompatibility shows up in two distinct ways:
 
   > The Trade Server rejected the sign-in request — check that YB_BASE_URL points to the CLIENT (public) API port: it is a different port from the admin API on the same server. If the port is right, the server version may predate the public client API; ask your broker.
 
-- **`get_balances` and `get_limits` drop the connection.** On older builds, sign-in may
-  succeed and almost everything works — but these two tools fail with transport-level errors
-  such as `fetch failed`, `socket hang up`, or `ECONNRESET` instead of a proper HTTP error:
-  the server simply closes the connection, because the underlying endpoints were added in
-  newer server versions.
+- **`get_balances` and `get_limits` drop the connection.** Sign-in may succeed and
+  everything else works — but these two tools fail with transport-level errors such as
+  `fetch failed`, `socket hang up`, or `ECONNRESET` instead of a proper HTTP error. The
+  Trade Server closes the connection for routes it does not implement, and as of the time
+  of writing these two endpoints are documented in the API specification but not yet
+  available in Trade Server releases.
 
-**Remedy:** this cannot be fixed from your side. Ask your broker (or whoever operates the
-Trade Server) to update it to a version that supports the missing endpoints — everything
-else keeps working in the meantime. Admin mode uses a different, longer-established API
-surface and is not affected by this particular incompatibility.
+**Remedy:** this cannot be fixed from your side. Everything else keeps working; the two
+tools will start working automatically once a Trade Server release ships those endpoints —
+ask your broker (or whoever operates the Trade Server) about availability. Admin mode uses
+a different, longer-established API surface and is not affected.
 
 ## Tool errors carry a sign-in hint
 
