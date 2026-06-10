@@ -12,7 +12,7 @@ import { registerClientTools } from "./register-client.js";
 
 async function main() {
   const config = parseConfig(process.env);
-  const server = new McpServer({ name: "trade-server", version: "1.1.0" });
+  const server = new McpServer({ name: "trade-server", version: "1.1.1" });
 
   if (config.mode === "admin") {
     const restClient = new RestClient(
