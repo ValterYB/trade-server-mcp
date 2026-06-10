@@ -3,3 +3,5 @@ dist/
 *.tgz
 .env
 mcp-config.json
+.DS_Store
+Thumbs.db

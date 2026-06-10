@@ -4,6 +4,7 @@
 //
 // Usage (credentials/env supplied by the caller, never hardcoded here):
 //   admin:  YB_API_KEY=... YB_SECRET_KEY=... YB_BASE_URL=... node scripts/regression-admin.mjs admin
+//           (optional: REGRESSION_ACCOUNT_ID=<existing account> enables the account-info check)
 //   client: YB_MODE=client YB_LOGIN=... YB_PASSWORD=... YB_BASE_URL=... node scripts/regression-admin.mjs client
 //
 // Exit code 0 = all checks passed. Non-zero = regression. Part of the release checklist.
@@ -101,13 +102,18 @@ try {
     const healthText = toolText(health);
     check("health_check ok (server time)", !health.result?.isError && /\d{4}-\d{2}-\d{2}|\d{10,}/.test(healthText), healthText.slice(0, 120));
 
-    const acct = await request(4, "tools/call", { name: "get_account_info", arguments: { accountId: 2 } });
-    const acctText = toolText(acct);
-    let acctJson = null;
-    try { acctJson = JSON.parse(acctText); } catch { /* keep null */ }
-    const payload = acctJson?.data ?? acctJson ?? {};
-    check("get_account_info(2): groupId == 2", payload.groupId === 2, `groupId=${payload.groupId}`);
-    check("get_account_info(2): enabled == true", payload.enabled === true, `enabled=${payload.enabled}`);
+    const regAccount = Number(process.env.REGRESSION_ACCOUNT_ID);
+    if (Number.isInteger(regAccount) && regAccount > 0) {
+      const acct = await request(4, "tools/call", { name: "get_account_info", arguments: { accountId: regAccount } });
+      const acctText = toolText(acct);
+      let acctJson = null;
+      try { acctJson = JSON.parse(acctText); } catch { /* keep null */ }
+      const payload = acctJson?.data ?? acctJson ?? {};
+      check(`get_account_info(${regAccount}): returns the requested account`,
+        !acct.result?.isError && payload.id === regAccount, `id=${payload.id}`);
+    } else {
+      console.log("  get_account_info check skipped (set REGRESSION_ACCOUNT_ID to enable)");
+    }
   } else {
     check("tools/list count == 26", tools.length === 26, `got ${tools.length}`);
     check("client mode: place_order has NO accountId",

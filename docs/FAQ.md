@@ -103,7 +103,7 @@ unchanged.
 
 Yes. The server speaks standard MCP over **stdio**, so any MCP-compatible client that can
 launch a stdio server works: configure it to run
-`npx -y github:yourbourse/trade-server-mcp#v1.1.0` (or `node <path-to-repo>/dist/index.js`
+`npx -y github:yourbourse/trade-server-mcp#v1.1.1` (or `node <path-to-repo>/dist/index.js`
 if you cloned the repo) with the environment variables for your mode. See
 [Configuration → Other MCP clients](./CONFIGURATION.md#other-mcp-clients).
 

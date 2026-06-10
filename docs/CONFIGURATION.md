@@ -55,7 +55,7 @@ The examples below use placeholders — replace `<your-server-host>:<port>`, `<a
 
 Requirements: **Node.js 18+** and **git**. On the first launch, npx fetches and builds the
 pinned release from GitHub then caches it — subsequent starts are instant. When a newer release
-tag is available, update the `#v1.1.0` pin in your config to that tag.
+tag is available, update the `#v1.1.1` pin in your config to that tag.
 
 ### Setup 1: Admin mode (broker administrators)
 
@@ -66,7 +66,7 @@ tag is available, update the `#v1.1.0` pin in your config to that tag.
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "admin",
@@ -86,7 +86,7 @@ claude mcp add trade-server \
   --env YB_MODE=admin \
   --env YB_API_KEY=<api-key> \
   --env YB_SECRET_KEY=<secret-key> \
-  -- npx -y github:yourbourse/trade-server-mcp#v1.1.0
+  -- npx -y github:yourbourse/trade-server-mcp#v1.1.1
 ```
 
 **Claude Code** — or declare it in your project's `.mcp.json`:
@@ -96,7 +96,7 @@ claude mcp add trade-server \
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "admin",
@@ -117,7 +117,7 @@ claude mcp add trade-server \
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -140,7 +140,7 @@ claude mcp add trade-server \
   --env YB_MODE=client \
   --env YB_LOGIN=<login> \
   --env YB_PASSWORD=<password> \
-  -- npx -y github:yourbourse/trade-server-mcp#v1.1.0
+  -- npx -y github:yourbourse/trade-server-mcp#v1.1.1
 ```
 
 **Claude Code** — or declare it in your project's `.mcp.json`:
@@ -150,7 +150,7 @@ claude mcp add trade-server \
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -173,7 +173,7 @@ claude mcp add trade-server \
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -193,7 +193,7 @@ claude mcp add trade-server \
   --env YB_MODE=client \
   --env YB_API_KEY=<api-key> \
   --env YB_SECRET_KEY=<secret-key> \
-  -- npx -y github:yourbourse/trade-server-mcp#v1.1.0
+  -- npx -y github:yourbourse/trade-server-mcp#v1.1.1
 ```
 
 **Claude Code** — or declare it in your project's `.mcp.json`:
@@ -203,7 +203,7 @@ claude mcp add trade-server \
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -243,7 +243,7 @@ claude mcp add trade-server \
 ### Other MCP clients
 
 Any MCP-compatible client that supports stdio servers can run the Trade Server MCP. Configure it
-to launch `npx -y github:yourbourse/trade-server-mcp#v1.1.0` over the **stdio** transport, with
+to launch `npx -y github:yourbourse/trade-server-mcp#v1.1.1` over the **stdio** transport, with
 the environment variables from whichever setup above matches your situation. There is no HTTP/SSE
 endpoint — the server communicates exclusively over stdin/stdout, and writes its log lines to
 stderr.

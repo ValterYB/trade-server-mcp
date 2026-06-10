@@ -78,13 +78,16 @@ same care as the credentials themselves.
 
 ## Supply-chain stance
 
-**This project is deliberately not published to the npm registry in v1.** The wave of npm
+**This project is deliberately never published to the npm registry.** The wave of npm
 supply-chain attacks in May 2026 — including the compromises of **TanStack**,
 **node-ipc**, and **@antv** packages — showed how a poisoned registry release can reach
-installers within hours. For software that holds trading credentials, we prefer the
-slower, auditable path:
+installers within hours. For software that holds trading credentials, we distribute from
+this GitHub repository only, in two forms:
 
-- **Install from source only:** clone the GitHub repository, check out a tag or commit you
+- **npx pinned to a release tag (recommended):** `npx -y github:yourbourse/trade-server-mcp#<tag>`.
+  A tag pin is immutable — it cannot be silently replaced the way a mutable registry version
+  can, and there is no registry account to hijack.
+- **Or install from source:** clone the GitHub repository, check out a tag or commit you
   trust, and build locally (see [Getting Started](./GETTING_STARTED.md)).
 - **Install dependencies with `npm ci` only.** It installs exactly what the committed
   `package-lock.json` pins — bit-for-bit reproducible — and fails loudly if the lockfile

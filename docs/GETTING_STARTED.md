@@ -7,7 +7,7 @@ This guide takes you from a fresh machine to your first successful tool call.
 ## Prerequisites
 
 - **Node.js 18 or newer** — check with `node --version`.
-- **git** — to clone the repository.
+- **git** — used by npx to fetch the server from GitHub (or by you, to clone it).
 - **A YourBourse Trade Server with API access**, and credentials for it (see
   [Choose your mode](#choose-your-mode) below for which credentials you need).
 
@@ -28,7 +28,7 @@ run it:
 
 **Option A — no clone (recommended).** Let your MCP client fetch and run the server directly
 from GitHub, pinned to a release tag. Nothing to download manually; you just use
-`"command": "npx", "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"]` in your MCP
+`"command": "npx", "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"]` in your MCP
 configuration instead of a local file path. The first launch takes a little longer (npx
 fetches and builds the release once, then caches it). Requires Node.js 18+ and git.
 All full configuration examples in [Configuration](./CONFIGURATION.md) work with either

@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-7C3AED)](https://modelcontextprotocol.io/)
-![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-85%20passing-brightgreen)
 ![License](https://img.shields.io/badge/License-Proprietary-red.svg)
 
 <br>
@@ -51,7 +51,7 @@ For a trader on Claude Desktop, add to `claude_desktop_config.json`:
   "mcpServers": {
     "trade-server": {
       "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.1"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -63,7 +63,7 @@ For a trader on Claude Desktop, add to `claude_desktop_config.json`:
 }
 ```
 
-The `#v1.1.0` pin makes the install immutable — see [Security](docs/SECURITY.md) for why we
+The `#v1.1.1` pin makes the install immutable — see [Security](docs/SECURITY.md) for why we
 distribute from GitHub rather than the npm registry.
 
 **Or clone and build** if you prefer a local checkout:
@@ -82,9 +82,8 @@ Broker administrators use `YB_MODE=admin` with `YB_API_KEY` / `YB_SECRET_KEY` in
 variables, both modes, and snippets for Claude Code and other MCP clients are in
 [Configuration](docs/CONFIGURATION.md).
 
-**Finally, restart your MCP client** so it launches the server.
-
-**4. Ask your AI:** *"What's my account state?"*
+**Finally, restart your MCP client** so it launches the server — then ask your AI:
+*"What's my account state?"*
 
 First time setting up? The [Getting Started guide](docs/GETTING_STARTED.md) walks through
 everything, including which credentials you need and how to verify the first tool call.
@@ -219,7 +218,7 @@ trade-server-mcp/
 │   ├── tools/
 │   │   ├── admin/             # trading, account, market-data, config tool modules
 │   │   └── client/            # trading, account, market-data tool modules
-│   └── test/                  # node:test suite — 82 tests
+│   └── test/                  # node:test suite — 85 tests
 ├── docs/                      # Full documentation set (see index above)
 ├── reference/
 │   └── openapi.json           # Trade Server API contract the tools are checked against
@@ -241,7 +240,7 @@ trade-server-mcp/
 |---------|-------------|
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run dev` | Compile in watch mode |
-| `npm test` | Build and run the full test suite (82 tests, `node --test`) |
+| `npm test` | Build and run the full test suite (85 tests, `node --test`) |
 | `npm run lint` | ESLint over the project |
 | `npm run format` / `npm run format:check` | Prettier write / verify |
 | `npm run type-check` | TypeScript type checking without emitting |
@@ -272,8 +271,8 @@ signing secret for the sign-in request. Credentials live exclusively in your MCP
 configuration and the server's process environment; nothing is ever written to disk, logged,
 or echoed back to the AI. Order-placing requests are never retried on connection errors, so a
 network blip cannot turn into a duplicate fill. The project ships **no npm package by
-design**: distribution is GitHub clone + build, keeping the supply chain to four pinned
-runtime dependencies. Full details, recommended practices, and the vulnerability reporting
+design**: distribution is npx from a pinned GitHub release tag, or clone + build — never
+the npm registry — keeping the supply chain to four pinned runtime dependencies. Full details, recommended practices, and the vulnerability reporting
 process are in [SECURITY.md](docs/SECURITY.md).
 
 ---
