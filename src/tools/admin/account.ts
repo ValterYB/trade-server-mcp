@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RestClient } from "../rest-client.js";
+import { RestClient } from "../../rest-client.js";
 
 export const getAccountStateSchema = z.object({
   accountId: z.number().describe("Trading account ID (login)"),
@@ -7,7 +7,7 @@ export const getAccountStateSchema = z.object({
 
 export async function getAccountState(
   client: RestClient,
-  params: z.infer<typeof getAccountStateSchema>
+  params: z.infer<typeof getAccountStateSchema>,
 ) {
   const states = await client.post("/admin/accounts/states/query", {
     A: [params.accountId],
@@ -21,7 +21,7 @@ export const getAccountInfoSchema = z.object({
 
 export async function getAccountInfo(
   client: RestClient,
-  params: z.infer<typeof getAccountInfoSchema>
+  params: z.infer<typeof getAccountInfoSchema>,
 ) {
   return client.get(`/admin/accounts/get/${params.accountId}`);
 }
@@ -36,16 +36,24 @@ export const cashTransferSchema = z.object({
   accountId: z.number().describe("Trading account ID"),
   amount: z.number().describe("Transfer amount"),
   type: z
-    .enum(["Balance", "Credit", "Fee", "Adjustment", "Bonus", "CreditBonus", "Commission", "Interest", "Dividend", "Tax"])
+    .enum([
+      "Balance",
+      "Credit",
+      "Fee",
+      "Adjustment",
+      "Bonus",
+      "CreditBonus",
+      "Commission",
+      "Interest",
+      "Dividend",
+      "Tax",
+    ])
     .describe("Transfer type (Balance = deposit/withdrawal, use negative amount for withdrawal)"),
   currency: z.string().optional().default("USD").describe("Currency or asset name"),
   comment: z.string().optional().describe("Transfer comment"),
 });
 
-export async function cashTransfer(
-  client: RestClient,
-  params: z.infer<typeof cashTransferSchema>
-) {
+export async function cashTransfer(client: RestClient, params: z.infer<typeof cashTransferSchema>) {
   const body: Record<string, unknown> = {
     A: params.accountId,
     a: params.amount,
@@ -67,7 +75,7 @@ export const getTransferHistorySchema = z.object({
 
 export async function getTransferHistory(
   client: RestClient,
-  params: z.infer<typeof getTransferHistorySchema>
+  params: z.infer<typeof getTransferHistorySchema>,
 ) {
   const body: Record<string, unknown> = {};
   if (params.accountId !== undefined) body.A = params.accountId;
@@ -82,7 +90,9 @@ export const getBalancesSchema = z.object({});
 
 export async function getBalances(client: RestClient) {
   // Get all accounts
-  const result = (await client.get("/admin/accounts/query")) as { accounts?: Array<{ id?: number }> };
+  const result = (await client.get("/admin/accounts/query")) as {
+    accounts?: Array<{ id?: number }>;
+  };
   const accounts = result.accounts ?? [];
 
   // Extract account IDs

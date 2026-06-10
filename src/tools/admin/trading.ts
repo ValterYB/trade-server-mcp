@@ -1,14 +1,12 @@
 import { z } from "zod";
-import { RestClient } from "../rest-client.js";
+import { RestClient } from "../../rest-client.js";
 
 export const placeOrderSchema = z.object({
   accountId: z.number().describe("Trading account ID (login)"),
   symbol: z.string().describe("Symbol name, e.g. EURUSD"),
   side: z.enum(["buy", "sell"]).describe("Order side"),
   quantity: z.number().positive().describe("Volume in lots, e.g. 0.1"),
-  orderType: z
-    .enum(["Market", "Limit", "Stop", "StopLimit", "CloseBy"])
-    .describe("Order type"),
+  orderType: z.enum(["Market", "Limit", "Stop", "StopLimit", "CloseBy"]).describe("Order type"),
   timeInForce: z
     .enum(["FOK", "IOC", "GTC", "GTD", "Day", "Ms"])
     .describe("Time in force. Use IOC or FOK for Market orders"),
@@ -22,10 +20,7 @@ export const placeOrderSchema = z.object({
   comment: z.string().optional().describe("Order comment"),
 });
 
-export async function placeOrder(
-  client: RestClient,
-  params: z.infer<typeof placeOrderSchema>
-) {
+export async function placeOrder(client: RestClient, params: z.infer<typeof placeOrderSchema>) {
   const body: Record<string, unknown> = {
     A: params.accountId,
     s: params.symbol,
@@ -52,10 +47,7 @@ export const cancelOrderSchema = z.object({
   orderId: z.number().describe("Order ID to cancel"),
 });
 
-export async function cancelOrder(
-  client: RestClient,
-  params: z.infer<typeof cancelOrderSchema>
-) {
+export async function cancelOrder(client: RestClient, params: z.infer<typeof cancelOrderSchema>) {
   return client.post("/admin/orders/delete", {
     A: params.accountId,
     id: params.orderId,
@@ -70,10 +62,7 @@ export const modifyOrderSchema = z.object({
   stopPrice: z.number().optional().describe("New stop price"),
 });
 
-export async function modifyOrder(
-  client: RestClient,
-  params: z.infer<typeof modifyOrderSchema>
-) {
+export async function modifyOrder(client: RestClient, params: z.infer<typeof modifyOrderSchema>) {
   const body: Record<string, unknown> = {
     id: params.orderId,
     A: params.accountId,
@@ -92,7 +81,7 @@ export const getWorkingOrdersSchema = z.object({
 
 export async function getWorkingOrders(
   client: RestClient,
-  params: z.infer<typeof getWorkingOrdersSchema>
+  params: z.infer<typeof getWorkingOrdersSchema>,
 ) {
   const body: Record<string, unknown> = {};
   if (params.accountId !== undefined) body.A = params.accountId;
@@ -108,7 +97,7 @@ export const getOpenPositionsSchema = z.object({
 
 export async function getOpenPositions(
   client: RestClient,
-  params: z.infer<typeof getOpenPositionsSchema>
+  params: z.infer<typeof getOpenPositionsSchema>,
 ) {
   const body: Record<string, unknown> = {};
   if (params.accountId !== undefined) body.A = params.accountId;
@@ -125,7 +114,7 @@ export const closePositionSchema = z.object({
 
 export async function closePosition(
   client: RestClient,
-  params: z.infer<typeof closePositionSchema>
+  params: z.infer<typeof closePositionSchema>,
 ) {
   // Get position details first to know symbol and side
   const result = (await client.post("/admin/positions/query", {
@@ -162,7 +151,7 @@ export const modifyPositionSltpSchema = z.object({
 
 export async function modifyPositionSltp(
   client: RestClient,
-  params: z.infer<typeof modifyPositionSltpSchema>
+  params: z.infer<typeof modifyPositionSltpSchema>,
 ) {
   const body: Record<string, unknown> = {
     A: params.accountId,
@@ -184,7 +173,7 @@ export const getTradeHistorySchema = z.object({
 
 export async function getTradeHistory(
   client: RestClient,
-  params: z.infer<typeof getTradeHistorySchema>
+  params: z.infer<typeof getTradeHistorySchema>,
 ) {
   const body: Record<string, unknown> = {};
   if (params.accountId !== undefined) body.A = params.accountId;
@@ -206,7 +195,7 @@ export const getOrderHistorySchema = z.object({
 
 export async function getOrderHistory(
   client: RestClient,
-  params: z.infer<typeof getOrderHistorySchema>
+  params: z.infer<typeof getOrderHistorySchema>,
 ) {
   const body: Record<string, unknown> = {};
   if (params.accountId !== undefined) body.A = params.accountId;
@@ -229,7 +218,7 @@ export const modifyOrderSltpSchema = z.object({
 
 export async function modifyOrderSltp(
   client: RestClient,
-  params: z.infer<typeof modifyOrderSltpSchema>
+  params: z.infer<typeof modifyOrderSltpSchema>,
 ) {
   const body: Record<string, unknown> = {
     A: params.accountId,
@@ -250,7 +239,7 @@ export const cancelAllOrdersSchema = z.object({
 
 export async function cancelAllOrders(
   client: RestClient,
-  params: z.infer<typeof cancelAllOrdersSchema>
+  params: z.infer<typeof cancelAllOrdersSchema>,
 ) {
   // Always fetch all orders for the account (server-side symbol filter is unreliable)
   const result = (await client.post("/admin/orders/active", { A: params.accountId })) as {
@@ -274,11 +263,19 @@ export async function cancelAllOrders(
       await client.post("/admin/orders/delete", { A: params.accountId, id: order.id });
       results.push({ orderId: order.id, symbol: order.s, status: "cancelled" });
     } catch (e) {
-      results.push({ orderId: order.id, symbol: order.s, status: `failed: ${e instanceof Error ? e.message : String(e)}` });
+      results.push({
+        orderId: order.id,
+        symbol: order.s,
+        status: `failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
     }
   }
 
-  return { cancelled: results.filter((r) => r.status === "cancelled").length, total: orders.length, results };
+  return {
+    cancelled: results.filter((r) => r.status === "cancelled").length,
+    total: orders.length,
+    results,
+  };
 }
 
 export const closeAllPositionsSchema = z.object({
@@ -288,7 +285,7 @@ export const closeAllPositionsSchema = z.object({
 
 export async function closeAllPositions(
   client: RestClient,
-  params: z.infer<typeof closeAllPositionsSchema>
+  params: z.infer<typeof closeAllPositionsSchema>,
 ) {
   // Always fetch all positions for the account (server-side symbol filter is unreliable)
   const result = (await client.post("/admin/positions/query", { A: params.accountId })) as {
@@ -306,7 +303,13 @@ export async function closeAllPositions(
     return { closed: 0, message: "No open positions found" };
   }
 
-  const results: Array<{ positionId: number; symbol: string; side: string; quantity: number; status: string }> = [];
+  const results: Array<{
+    positionId: number;
+    symbol: string;
+    side: string;
+    quantity: number;
+    status: string;
+  }> = [];
   for (const pos of positions) {
     try {
       const closeSide = pos.S === "buy" ? "sell" : "buy";
@@ -320,13 +323,29 @@ export async function closeAllPositions(
         pi: pos.id,
         mc: false,
       });
-      results.push({ positionId: pos.id, symbol: pos.s, side: pos.S, quantity: pos.q, status: "closed" });
+      results.push({
+        positionId: pos.id,
+        symbol: pos.s,
+        side: pos.S,
+        quantity: pos.q,
+        status: "closed",
+      });
     } catch (e) {
-      results.push({ positionId: pos.id, symbol: pos.s, side: pos.S, quantity: pos.q, status: `failed: ${e instanceof Error ? e.message : String(e)}` });
+      results.push({
+        positionId: pos.id,
+        symbol: pos.s,
+        side: pos.S,
+        quantity: pos.q,
+        status: `failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
     }
   }
 
-  return { closed: results.filter((r) => r.status === "closed").length, total: positions.length, results };
+  return {
+    closed: results.filter((r) => r.status === "closed").length,
+    total: positions.length,
+    results,
+  };
 }
 
 export const closeBySchema = z.object({
@@ -335,10 +354,7 @@ export const closeBySchema = z.object({
   positionById: z.number().describe("Opposite position ID to close against"),
 });
 
-export async function closeBy(
-  client: RestClient,
-  params: z.infer<typeof closeBySchema>
-) {
+export async function closeBy(client: RestClient, params: z.infer<typeof closeBySchema>) {
   // Get position details to determine symbol and quantity
   const result = (await client.post("/admin/positions/query", {
     A: params.accountId,
@@ -382,12 +398,16 @@ export async function closeBy(
 
 export const forceDeleteOrderSchema = z.object({
   accountId: z.number().describe("Trading account ID"),
-  orderId: z.number().describe("Order ID to force-delete (removes stuck/corrupted orders that normal cancel can't remove)"),
+  orderId: z
+    .number()
+    .describe(
+      "Order ID to force-delete (removes stuck/corrupted orders that normal cancel can't remove)",
+    ),
 });
 
 export async function forceDeleteOrder(
   client: RestClient,
-  params: z.infer<typeof forceDeleteOrderSchema>
+  params: z.infer<typeof forceDeleteOrderSchema>,
 ) {
   return client.post("/admin/orders/force/delete", {
     A: params.accountId,
@@ -403,7 +423,7 @@ export const getAccountSummarySchema = z.object({
 
 export async function getAccountSummary(
   client: RestClient,
-  params: z.infer<typeof getAccountSummarySchema>
+  params: z.infer<typeof getAccountSummarySchema>,
 ) {
   const [state, positions, orders] = await Promise.all([
     client.post("/admin/accounts/states/query", { A: [params.accountId] }),

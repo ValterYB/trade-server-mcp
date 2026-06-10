@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RestClient } from "../rest-client.js";
+import { RestClient } from "../../rest-client.js";
 
 export const getGroupsSchema = z.object({});
 
@@ -11,10 +11,7 @@ export const getGroupSchema = z.object({
   groupId: z.number().describe("Group unique identifier"),
 });
 
-export async function getGroup(
-  client: RestClient,
-  params: z.infer<typeof getGroupSchema>
-) {
+export async function getGroup(client: RestClient, params: z.infer<typeof getGroupSchema>) {
   return client.get(`/admin/groups/get/${params.groupId}`);
 }
 
@@ -35,16 +32,18 @@ export const setOrderRoutingSchema = z.object({
   routing: z
     .array(
       z.object({
-        a: z.array(z.record(z.unknown())).describe("Actions array (e.g. [{type:'Execute',connectorId:1}])"),
+        a: z
+          .array(z.record(z.unknown()))
+          .describe("Actions array (e.g. [{type:'Execute',connectorId:1}])"),
         f: z.array(z.record(z.unknown())).optional().describe("Filters array (optional)"),
-      })
+      }),
     )
     .describe("Array of routing rules"),
 });
 
 export async function setOrderRouting(
   client: RestClient,
-  params: z.infer<typeof setOrderRoutingSchema>
+  params: z.infer<typeof setOrderRoutingSchema>,
 ) {
   return client.post("/admin/routing/edit", {
     version: params.version,
@@ -53,13 +52,18 @@ export async function setOrderRouting(
 }
 
 export const addRoutingRuleSchema = z.object({
-  actions: z.array(z.record(z.unknown())).describe("Actions array (e.g. [{type:'Execute',connectorId:1}])"),
-  filters: z.array(z.record(z.unknown())).optional().describe("Filters array (optional, e.g. [{type:'Symbol',value:'EURUSD'}])"),
+  actions: z
+    .array(z.record(z.unknown()))
+    .describe("Actions array (e.g. [{type:'Execute',connectorId:1}])"),
+  filters: z
+    .array(z.record(z.unknown()))
+    .optional()
+    .describe("Filters array (optional, e.g. [{type:'Symbol',value:'EURUSD'}])"),
 });
 
 export async function addRoutingRule(
   client: RestClient,
-  params: z.infer<typeof addRoutingRuleSchema>
+  params: z.infer<typeof addRoutingRuleSchema>,
 ) {
   // Get current routing
   const current = (await client.get("/admin/routing/query")) as {
@@ -79,12 +83,16 @@ export async function addRoutingRule(
 }
 
 export const removeRoutingRuleSchema = z.object({
-  index: z.number().describe("Zero-based index of the routing rule to remove (use get_order_routing to see current rules)"),
+  index: z
+    .number()
+    .describe(
+      "Zero-based index of the routing rule to remove (use get_order_routing to see current rules)",
+    ),
 });
 
 export async function removeRoutingRule(
   client: RestClient,
-  params: z.infer<typeof removeRoutingRuleSchema>
+  params: z.infer<typeof removeRoutingRuleSchema>,
 ) {
   // Get current routing
   const current = (await client.get("/admin/routing/query")) as {
@@ -94,7 +102,9 @@ export async function removeRoutingRule(
 
   const routing = current.routing || [];
   if (params.index < 0 || params.index >= routing.length) {
-    throw new Error(`Invalid index ${params.index}. Current routing has ${routing.length} rules (0-${routing.length - 1}).`);
+    throw new Error(
+      `Invalid index ${params.index}. Current routing has ${routing.length} rules (0-${routing.length - 1}).`,
+    );
   }
 
   const removed = routing[params.index];
@@ -120,7 +130,7 @@ export const getSymbolDetailsSchema = z.object({
 
 export async function getSymbolDetails(
   client: RestClient,
-  params: z.infer<typeof getSymbolDetailsSchema>
+  params: z.infer<typeof getSymbolDetailsSchema>,
 ) {
   return client.get(`/admin/symbols/get/${params.symbolId}`);
 }

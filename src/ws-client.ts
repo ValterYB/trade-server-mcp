@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { AuthConfig } from "./auth.js";
+import { AuthConfig } from "./auth/admin-auth.js";
 
 export class WsClient {
   private ws: WebSocket | null = null;
@@ -10,8 +10,7 @@ export class WsClient {
     { resolve: (data: unknown) => void; reject: (err: Error) => void }
   > = new Map();
   // Handlers keyed by reqId (not channel)
-  private subscriptionHandlers: Map<string, (data: unknown) => void> =
-    new Map();
+  private subscriptionHandlers: Map<string, (data: unknown) => void> = new Map();
   private connected = false;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempts = 0;
@@ -29,9 +28,7 @@ export class WsClient {
   async connect(): Promise<void> {
     if (this.connected) return;
 
-    const wsUrl = this.config.baseUrl
-      .replace("https://", "wss://")
-      .replace("http://", "ws://");
+    const wsUrl = this.config.baseUrl.replace("https://", "wss://").replace("http://", "ws://");
     const url = `${wsUrl}/ws/v1`;
 
     return new Promise((resolve, reject) => {
@@ -77,7 +74,9 @@ export class WsClient {
     while (this.reconnectAttempts < this.maxReconnectAttempts && !this.connected) {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 16000);
-      console.error(`WS reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+      console.error(
+        `WS reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`,
+      );
       await new Promise((r) => setTimeout(r, delay));
 
       try {
@@ -125,7 +124,7 @@ export class WsClient {
   async subscribe(
     channel: string,
     payload: Record<string, unknown>,
-    reqId: string
+    reqId: string,
   ): Promise<unknown> {
     const msg = {
       m: "subscribe" as const,
@@ -141,7 +140,11 @@ export class WsClient {
     return this.sendAndWait(reqId, msg);
   }
 
-  async unsubscribe(channel: string, payload: Record<string, unknown>, reqId: string): Promise<void> {
+  async unsubscribe(
+    channel: string,
+    payload: Record<string, unknown>,
+    reqId: string,
+  ): Promise<void> {
     if (!this.ws || !this.connected) return;
     const msg = {
       m: "unsubscribe" as const,
@@ -164,7 +167,7 @@ export class WsClient {
   async getSnapshot(
     channel: string,
     payload: Record<string, unknown>,
-    options?: { timeoutMs?: number }
+    options?: { timeoutMs?: number },
   ): Promise<unknown[]> {
     const results: unknown[] = [];
     const timeout = options?.timeoutMs ?? 3000;

@@ -1,7 +1,17 @@
 {
   "name": "trade-server-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Your Bourse Trade Server Admin API",
+  "description": "MCP server for the YourBourse Trade Server — broker (admin) and trader (client) modes",
+  "author": "YourBourse",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourbourse/trade-server-mcp.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -11,7 +21,12 @@
     "build": "tsc",
     "prepare": "npm run build",
     "start": "node dist/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "tsc && node --test dist/test/*.js",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
@@ -22,6 +37,9 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
-    "typescript": "^5.7.0"
+    "eslint": "^10.4.1",
+    "prettier": "^3.8.4",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.61.0"
   }
 }

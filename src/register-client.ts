@@ -1,0 +1,212 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RestClient } from "./rest-client.js";
+import { ClientAuth } from "./auth/client-auth.js";
+import { toolHandler } from "./tool-handler.js";
+import * as t from "./tools/client/trading.js";
+import * as a from "./tools/client/account.js";
+import * as m from "./tools/client/market-data.js";
+
+export const CLIENT_TOOL_COUNT = 26;
+
+export function registerClientTools(server: McpServer, client: RestClient, auth?: ClientAuth) {
+  // While sign-in is failing (authFailureHint non-null), append the targeted hint
+  // (bad credentials vs old server version vs connectivity) to EVERY tool error so
+  // the failure is actionable from the tool result. Old servers may answer client-API
+  // endpoints with a 401 — or simply close the connection (observed on older servers) — so the
+  // hint must not be gated on ApiError 401. The hint clears on successful sign-in.
+  const withHint =
+    <T>(fn: (p: T) => Promise<unknown>) =>
+    async (p: T) => {
+      try {
+        return await fn(p);
+      } catch (err) {
+        const hint = auth?.authFailureHint();
+        if (hint && err instanceof Error) {
+          throw new Error(`${err.message}\n${hint}`, { cause: err.cause });
+        }
+        throw err;
+      }
+    };
+
+  // Trading (9)
+  server.tool(
+    "place_order",
+    "Place a new order on YOUR account. Supports Market, Limit, Stop, StopLimit and CloseBy types. For Market orders use timeInForce IOC or FOK. Limit/Stop orders require limitPrice/stopPrice. Optionally attach stopLoss, takeProfit and a comment. To close two opposite hedged positions against each other, prefer the close_by tool.",
+    t.placeOrderSchema.shape,
+    toolHandler(withHint((p) => t.placeOrder(client, p))),
+  );
+  server.tool(
+    "modify_order",
+    "Modify one of your working orders (price or quantity). Only pending orders (Limit/Stop/StopLimit) can be modified. Provide only the fields you want to change.",
+    t.modifyOrderSchema.shape,
+    toolHandler(withHint((p) => t.modifyOrder(client, p))),
+  );
+  server.tool(
+    "cancel_order",
+    "Cancel one of your working (pending) orders by ID. Returns an error if the order is already filled or cancelled.",
+    t.cancelOrderSchema.shape,
+    toolHandler(withHint((p) => t.cancelOrder(client, p))),
+  );
+  server.tool(
+    "modify_order_sltp",
+    "Set or change stop loss / take profit on one of your pending orders. Omit a field to cancel that side.",
+    t.modifyOrderSltpSchema.shape,
+    toolHandler(withHint((p) => t.modifyOrderSltp(client, p))),
+  );
+  server.tool(
+    "modify_position_sltp",
+    "Set, modify or remove stop loss and/or take profit on one of your open positions. Set price to 0 to remove an existing SL/TP.",
+    t.modifyPositionSltpSchema.shape,
+    toolHandler(withHint((p) => t.modifyPositionSltp(client, p))),
+  );
+  server.tool(
+    "close_position",
+    "Close one of your open positions (full or partial). Specify quantity for partial close, omit for full close. Places an opposite market order against the position.",
+    t.closePositionSchema.shape,
+    toolHandler(withHint((p) => t.closePosition(client, p))),
+  );
+  server.tool(
+    "close_by",
+    "Close two of your opposite (hedged) positions against each other. Both must be on the same symbol with opposite sides; uses the smaller quantity. Only meaningful on hedging accounts.",
+    t.closeBySchema.shape,
+    toolHandler(withHint((p) => t.closeBy(client, p))),
+  );
+  server.tool(
+    "cancel_all_orders",
+    "Cancel ALL of your working orders in one call. Optionally filter by symbol. Returns count of cancelled orders.",
+    t.cancelAllOrdersSchema.shape,
+    toolHandler(withHint((p) => t.cancelAllOrders(client, p))),
+  );
+  server.tool(
+    "close_all_positions",
+    "Close ALL of your open positions in one call. Optionally filter by symbol. Useful for emergency flatten. Returns count of closed positions.",
+    t.closeAllPositionsSchema.shape,
+    toolHandler(withHint((p) => t.closeAllPositions(client, p))),
+  );
+
+  // Read trading (4)
+  server.tool(
+    "get_working_orders",
+    "Get your active/working (pending) orders. Optionally filter by symbol.",
+    t.getWorkingOrdersSchema.shape,
+    toolHandler(withHint((p) => t.getWorkingOrders(client, p))),
+  );
+  server.tool(
+    "get_order_history",
+    "Get your historical orders (completed, cancelled, rejected). Optionally filter by symbol and time range. Times are microseconds since epoch.",
+    t.getOrderHistorySchema.shape,
+    toolHandler(withHint((p) => t.getOrderHistory(client, p))),
+  );
+  server.tool(
+    "get_open_positions",
+    "Get your open positions with unrealized P/L. Optionally filter by symbol.",
+    t.getOpenPositionsSchema.shape,
+    toolHandler(withHint((p) => t.getOpenPositions(client, p))),
+  );
+  server.tool(
+    "get_trade_history",
+    "Get your historical trade executions (fills). Optionally filter by symbol and time range. Times are microseconds since epoch.",
+    t.getTradeHistorySchema.shape,
+    toolHandler(withHint((p) => t.getTradeHistory(client, p))),
+  );
+
+  // Account (5)
+  server.tool(
+    "get_account_state",
+    "Get your account's financial state: balance, equity, margin, free margin, margin level, unrealized P/L.",
+    a.getAccountStateSchema.shape,
+    toolHandler(withHint(() => a.getAccountState(client))),
+  );
+  server.tool(
+    "get_account_summary",
+    "Get a complete snapshot of your account in one call: financial state, all open positions, and all working orders.",
+    a.getAccountSummarySchema.shape,
+    toolHandler(withHint(() => a.getAccountSummary(client))),
+  );
+  server.tool(
+    "get_balances",
+    "Get your account's balances/collateral per asset.",
+    a.getBalancesSchema.shape,
+    toolHandler(withHint(() => a.getBalances(client))),
+  );
+  server.tool(
+    "get_transfer_history",
+    "Get your cash transfer history (deposits, withdrawals, adjustments). Times are microseconds since epoch.",
+    a.getTransferHistorySchema.shape,
+    toolHandler(withHint((p) => a.getTransferHistory(client, p))),
+  );
+  server.tool(
+    "get_limits",
+    "Get the API rate limits that apply to your session.",
+    a.getLimitsSchema.shape,
+    toolHandler(withHint(() => a.getLimits(client))),
+  );
+
+  // Market data (7) + utility (1)
+  server.tool(
+    "get_quote",
+    "Get the current bid/ask quote for a symbol.",
+    m.getQuoteSchema.shape,
+    toolHandler(withHint((p) => m.getQuote(client, p))),
+  );
+  server.tool(
+    "get_quotes",
+    "Get current bid/ask quotes for multiple symbols at once. More efficient than calling get_quote in a loop.",
+    m.getQuotesSchema.shape,
+    toolHandler(withHint((p) => m.getQuotes(client, p))),
+  );
+  server.tool(
+    "get_market_depth",
+    "Get the Level 2 order book (market depth) for a symbol. Default 10 price levels.",
+    m.getMarketDepthSchema.shape,
+    toolHandler(withHint((p) => m.getMarketDepth(client, p))),
+  );
+  server.tool(
+    "get_symbols",
+    "List trading symbols available to your account. Optionally filter by glob pattern (e.g. 'EUR*').",
+    m.getSymbolsSchema.shape,
+    toolHandler(withHint((p) => m.getSymbols(client, p))),
+  );
+  server.tool(
+    "get_symbol_details",
+    "Get complete configuration for a symbol: trading sessions, swap rates, tick size, lot size. Look up is by symbol name.",
+    m.getSymbolDetailsSchema.shape,
+    toolHandler(withHint((p) => m.getSymbolDetails(client, p))),
+  );
+  server.tool(
+    "get_candles",
+    "Get OHLCV candlestick data. Intervals: 1M, 5M, 15M, 30M, 1H, 4H, D, W, M.",
+    m.getCandlesSchema.shape,
+    toolHandler(withHint((p) => m.getCandles(client, p))),
+  );
+  server.tool(
+    "get_conversion_rate",
+    "Get a currency conversion rate (e.g. EUR to USD) using your group's configured price source.",
+    m.getConversionRateSchema.shape,
+    toolHandler(withHint((p) => m.getConversionRate(client, p))),
+  );
+  server.tool(
+    "health_check",
+    "Check the Trade Server is running and responsive. Returns current server time.",
+    m.healthCheckSchema.shape,
+    toolHandler(withHint(() => m.healthCheck(client))),
+  );
+
+  server.resource(
+    "symbols",
+    "trade://symbols",
+    { description: "List of trading symbols available to your account" },
+    async () => {
+      const result = await m.getSymbols(client, {});
+      return {
+        contents: [
+          {
+            uri: "trade://symbols",
+            text: JSON.stringify(result, null, 2),
+            mimeType: "application/json",
+          },
+        ],
+      };
+    },
+  );
+}

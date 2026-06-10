@@ -1,4 +1,4 @@
-import { AuthConfig, buildAuthHeaders } from "./auth.js";
+import { CredentialsProvider, generateSignature } from "./auth/admin-auth.js";
 
 export class ApiError extends Error {
   public readonly statusCode: number;
@@ -39,17 +39,54 @@ export class ApiError extends Error {
 }
 
 export class RestClient {
-  private config: AuthConfig;
   private etags: Map<string, string> = new Map();
 
-  constructor(config: AuthConfig) {
-    this.config = config;
+  constructor(
+    private baseUrl: string,
+    private provider: CredentialsProvider,
+  ) {}
+
+  private buildHeaders(method: string, body?: string): Record<string, string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const key = this.provider.getApiKey();
+    if (key) headers["X-YB-API-Key"] = key;
+    if (method !== "GET") {
+      const timestamp = Date.now() * 1000;
+      headers["X-YB-Timestamp"] = timestamp.toString();
+      headers["X-YB-Sign"] = generateSignature(
+        this.provider.getSigningSecret(),
+        body || "",
+        timestamp,
+      );
+    }
+    return headers;
   }
 
-  async get<T = unknown>(path: string): Promise<T> {
-    const url = `${this.config.baseUrl}/api/v1${path}`;
-    const headers = buildAuthHeaders(this.config, "GET");
-    headers["Content-Type"] = "application/json";
+  /**
+   * Run a request once; on a 401, ask the provider to renew credentials and
+   * re-run the request exactly once. A second 401 (or any other error)
+   * propagates. If renewal itself throws, the original 401 is surfaced.
+   */
+  private async withAuthRetry<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof ApiError && err.statusCode === 401 && this.provider.handleUnauthorized) {
+        let renewed = false;
+        try {
+          renewed = await this.provider.handleUnauthorized();
+        } catch {
+          throw err; // renewal itself failed — surface the original 401
+        }
+        if (renewed) return await fn(); // second 401 propagates — no loop
+      }
+      throw err;
+    }
+  }
+
+  private async doGet<T>(path: string): Promise<T> {
+    const url = `${this.baseUrl}/api/v1${path}`;
+    const headers = this.buildHeaders("GET");
 
     const etag = this.etags.get(path);
     if (etag) {
@@ -75,26 +112,33 @@ export class RestClient {
     return res.json() as Promise<T>;
   }
 
-  async post<T = unknown>(path: string, body: unknown): Promise<T> {
-    const url = `${this.config.baseUrl}/api/v1${path}`;
-    const bodyStr = JSON.stringify(body);
+  private async doSend<T>(
+    method: "POST" | "PUT",
+    path: string,
+    bodyStr: string,
+    retryOnConnectionError = true,
+  ): Promise<T> {
+    const url = `${this.baseUrl}/api/v1${path}`;
 
-    // Retry once on connection-level failures (undici connection reuse issues)
+    // Retry once on connection-level failures (undici connection reuse issues).
+    // 401 handling lives in withAuthRetry — this loop only covers transport errors.
+    // NOTE: a connection reset does not prove non-delivery — the server may have
+    // received the request before the connection dropped. Order placements pass
+    // retryOnConnectionError=false to opt out and avoid duplicate fills.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const headers = buildAuthHeaders(this.config, "POST", bodyStr);
-        headers["Content-Type"] = "application/json";
+        const headers = this.buildHeaders(method, bodyStr);
 
         const etag = this.etags.get(path);
         if (etag) {
           headers["If-Match"] = etag;
         }
 
-        const res = await fetch(url, { method: "POST", headers, body: bodyStr });
+        const res = await fetch(url, { method, headers, body: bodyStr });
 
         if (!res.ok) {
           const text = await res.text();
-          throw new ApiError("POST", path, res.status, text);
+          throw new ApiError(method, path, res.status, text);
         }
 
         const newEtag = res.headers.get("ETag");
@@ -106,23 +150,26 @@ export class RestClient {
         if (!text) return {} as T;
         return JSON.parse(text) as T;
       } catch (err) {
+        if (err instanceof ApiError) throw err; // don't swallow HTTP errors
         const msg = err instanceof Error ? err.message : "";
         // Only retry on connection-level failures, not HTTP errors
-        if (attempt === 0 && (msg === "fetch failed" || msg.includes("ECONNRESET") || msg.includes("socket hang up"))) {
-          console.error(`POST ${path}: connection failed, retrying...`);
+        if (
+          retryOnConnectionError &&
+          attempt === 0 &&
+          (msg === "fetch failed" || msg.includes("ECONNRESET") || msg.includes("socket hang up"))
+        ) {
+          console.error(`${method} ${path}: connection failed, retrying...`);
           continue;
         }
         throw err;
       }
     }
-    throw new Error(`POST ${path}: unreachable`);
+    throw new Error(`${method} ${path}: unreachable`);
   }
 
-  async delete<T = unknown>(path: string, body?: unknown): Promise<T> {
-    const url = `${this.config.baseUrl}/api/v1${path}`;
-    const bodyStr = body ? JSON.stringify(body) : "";
-    const headers = buildAuthHeaders(this.config, "DELETE", bodyStr);
-    headers["Content-Type"] = "application/json";
+  private async doDelete<T>(path: string, bodyStr: string): Promise<T> {
+    const url = `${this.baseUrl}/api/v1${path}`;
+    const headers = this.buildHeaders("DELETE", bodyStr);
 
     const etag = this.etags.get(path);
     if (etag) {
@@ -143,6 +190,37 @@ export class RestClient {
     const text = await res.text();
     if (!text) return {} as T;
     return JSON.parse(text) as T;
+  }
+
+  async get<T = unknown>(path: string): Promise<T> {
+    return this.withAuthRetry(() => this.doGet<T>(path));
+  }
+
+  async post<T = unknown>(
+    path: string,
+    body: unknown,
+    opts?: { retryOnConnectionError?: boolean },
+  ): Promise<T> {
+    const bodyStr = JSON.stringify(body);
+    return this.withAuthRetry(() =>
+      this.doSend<T>("POST", path, bodyStr, opts?.retryOnConnectionError ?? true),
+    );
+  }
+
+  async put<T = unknown>(
+    path: string,
+    body: unknown,
+    opts?: { retryOnConnectionError?: boolean },
+  ): Promise<T> {
+    const bodyStr = JSON.stringify(body);
+    return this.withAuthRetry(() =>
+      this.doSend<T>("PUT", path, bodyStr, opts?.retryOnConnectionError ?? true),
+    );
+  }
+
+  async delete<T = unknown>(path: string, body?: unknown): Promise<T> {
+    const bodyStr = body ? JSON.stringify(body) : "";
+    return this.withAuthRetry(() => this.doDelete<T>(path, bodyStr));
   }
 
   /** Store an etag for a specific path (useful after queries) */

@@ -1,0 +1,108 @@
+# FAQ
+
+Quick answers to the questions that come up most. For setup, see
+[Getting Started](./GETTING_STARTED.md); for symptom-by-symptom fixes, see
+[Troubleshooting](./TROUBLESHOOTING.md).
+
+## Why is there no account ID parameter in client mode?
+
+Because your session token *is* your account. When you sign in, the Trade Server binds the
+issued token to your trading account, and every tool call is made with that token — so the
+server itself enforces the scope. An account parameter would add nothing except a way to ask
+for accounts you cannot access anyway. See
+[Client Mode → The scoping model](./CLIENT_MODE.md#the-scoping-model-your-token-is-your-account).
+
+## Can one Claude session use both modes at the same time?
+
+Yes. Register the MCP server **twice under different names** (for example `trade-admin` and
+`trade-client`) in your MCP client's configuration, each entry with its own environment
+variables. Each instance runs independently in its own mode, and your AI sees both tool sets
+side by side.
+
+## Why isn't this published on npm?
+
+Deliberately. The May 2026 wave of npm supply-chain attacks made "install from the registry"
+a real risk for software that holds trading credentials, so v1 is distributed as
+clone-and-build only: `git clone`, `npm ci` against the committed lockfile, `npm run build`.
+The reasoning is laid out in [Security → Supply-chain stance](./SECURITY.md#supply-chain-stance).
+
+## Which Trade Server version do I need?
+
+Client mode requires a Trade Server new enough to expose the **public client API**. Older
+server versions (observed up to 26.4.x) do not support it — sign-in fails with HTTP 400 and
+data endpoints may drop connections. There is no version check you can run from the MCP
+itself, so the practical answer is: ask your broker to confirm their server supports client
+API access. See
+[Troubleshooting → Older Trade Server versions](./TROUBLESHOOTING.md#older-trade-server-versions-server-compatibility).
+
+## What happens if my password changes while the MCP is running?
+
+Usually nothing, at first: the running session uses the issued token pair, and background
+refresh is signed with the current signing token — not your password. The old password is
+only needed again when a full re-sign-in happens (for example after a server restart
+invalidates the session, or if a refresh fails), and at that point sign-in fails with the
+credentials hint. Update `YB_PASSWORD` in your MCP configuration and restart your MCP client.
+
+## Does the MCP store my password anywhere?
+
+No. The password is read from the `YB_PASSWORD` environment variable at startup, held in
+memory, and used only as the **local HMAC signing secret** for the sign-in request — it is
+never transmitted over the network, never logged, and never echoed into the conversation.
+Nothing is ever persisted to disk; the guarantees are spelled out in
+[Security](./SECURITY.md#credential-handling-guarantees).
+
+## Why did my market order not retry after a network error?
+
+Because retrying could fill you twice. A dropped connection does not prove the server never
+received the order — it may have been accepted just before the connection died — so
+order-placing calls are never resent automatically. Check `get_working_orders`,
+`get_open_positions`, and `get_order_history` to see what actually happened before placing
+again. Requests where a duplicate is harmless (such as modifications and most reads) may be
+retried once — see [Authentication → Timeouts and retries](./AUTHENTICATION.md#timeouts-and-retries)
+for the exact rules.
+
+## What is the difference between netting and hedging accounts?
+
+On a **netting** account there is one position per symbol: an opposite order offsets the
+existing position immediately. On a **hedging** account, buy and sell positions on the same
+symbol can coexist. One tool cares about the difference — `close_by`, which pairs two
+opposite positions against each other and therefore only works on hedging accounts; on a
+netting account, use `close_position`. See
+[Client Mode → Netting vs hedging accounts](./CLIENT_MODE.md#netting-vs-hedging-accounts).
+
+## How many tools are there, and why do the two modes differ?
+
+Admin mode exposes **38 tools and 4 resources**; client mode exposes **26 tools and
+1 resource**. The difference is the scope each set of credentials should carry: admin mode
+adds server-wide capabilities (other accounts, groups, routing rules, cash transfers,
+liquidity connectors), while client mode is deliberately limited to what *you* can do with
+your own account. Every tool is documented in the [Tools Reference](./TOOLS_REFERENCE.md).
+
+## How do I get credentials — a login or an API token pair?
+
+From your broker, in both cases. Traders normally already have a trading account number and
+password (the same ones used in the broker's trading terminal), which work directly as
+`YB_LOGIN` + `YB_PASSWORD`. Some brokers instead issue a public API **token pair** for API
+access — if you have one, configure it as `YB_API_KEY` + `YB_SECRET_KEY` with
+`YB_MODE=client`. Admin key pairs are issued only to broker administrators.
+
+## Did admin mode change in 1.0?
+
+No. Version 1.0 added client mode — the trader-scoped tool set with login/password and
+token-pair sign-in — alongside the existing admin tools. Admin mode kept its tool set and its
+static key-pair authentication; if you were using it before, your configuration keeps working
+unchanged.
+
+## Can I use this with MCP clients other than Claude?
+
+Yes. The server speaks standard MCP over **stdio**, so any MCP-compatible client that can
+launch a stdio server works: configure it to run `node <path-to-repo>/dist/index.js` with the
+environment variables for your mode. See
+[Configuration → Other MCP clients](./CONFIGURATION.md#other-mcp-clients).
+
+## Where next
+
+- [Getting Started](./GETTING_STARTED.md) — install and first connection
+- [Client Mode](./CLIENT_MODE.md) — the trader's guide
+- [Admin Mode](./ADMIN_MODE.md) — the broker administrator's guide
+- [Troubleshooting](./TROUBLESHOOTING.md) — symptom-first fixes

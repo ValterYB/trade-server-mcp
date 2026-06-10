@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { RestClient } from "../rest-client.js";
-import { WsClient } from "../ws-client.js";
+import { RestClient } from "../../rest-client.js";
+import { WsClient } from "../../ws-client.js";
 import * as ti from "technicalindicators";
 
 export const getQuoteSchema = z.object({
@@ -13,11 +13,15 @@ export async function getQuote(wsClient: WsClient, params: z.infer<typeof getQuo
     await wsClient.connect();
   }
 
-  const data = await wsClient.getSnapshot("L1", {
-    s: params.symbol,
-    g: params.groupId ?? 1,
-    streaming: true,
-  }, { timeoutMs: 3000 });
+  const data = await wsClient.getSnapshot(
+    "L1",
+    {
+      s: params.symbol,
+      g: params.groupId ?? 1,
+      streaming: true,
+    },
+    { timeoutMs: 3000 },
+  );
 
   // Extract quote data from updates
   const quotes: unknown[] = [];
@@ -36,18 +40,22 @@ export const getMarketDepthSchema = z.object({
 
 export async function getMarketDepth(
   wsClient: WsClient,
-  params: z.infer<typeof getMarketDepthSchema>
+  params: z.infer<typeof getMarketDepthSchema>,
 ) {
   if (!wsClient.isConnected) {
     await wsClient.connect();
   }
 
-  const data = await wsClient.getSnapshot("L2", {
-    s: params.symbol,
-    g: params.groupId ?? 1,
-    d: params.priceLevel ?? 10,
-    streaming: true,
-  }, { timeoutMs: 3000 });
+  const data = await wsClient.getSnapshot(
+    "L2",
+    {
+      s: params.symbol,
+      g: params.groupId ?? 1,
+      d: params.priceLevel ?? 10,
+      streaming: true,
+    },
+    { timeoutMs: 3000 },
+  );
 
   // Extract book data from updates
   const books: unknown[] = [];
@@ -62,17 +70,15 @@ export const getSymbolsSchema = z.object({
   filter: z.string().optional().describe("Symbol name filter pattern (e.g. EUR*)"),
 });
 
-export async function getSymbols(
-  client: RestClient,
-  params: z.infer<typeof getSymbolsSchema>
-) {
+export async function getSymbols(client: RestClient, params: z.infer<typeof getSymbolsSchema>) {
   const resp = await client.get<{ symbols: Array<{ name?: string }> }>("/admin/symbols/query");
   const symbols = resp.symbols || [];
   if (params.filter) {
-    const regex = new RegExp(
-      "^" + params.filter.replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
-      "i"
-    );
+    const pattern = params.filter
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*")
+      .replace(/\?/g, ".");
+    const regex = new RegExp(`^${pattern}$`, "i");
     return symbols.filter((s) => regex.test(s.name || ""));
   }
   return symbols;
@@ -90,13 +96,11 @@ export const getCandlesSchema = z.object({
   maxResults: z.number().optional().describe("Max candles to return (1-1000, default 1000)"),
 });
 
-export async function getCandles(
-  client: RestClient,
-  params: z.infer<typeof getCandlesSchema>
-) {
-  const symbolSelector = params.symbolId !== undefined
-    ? { symbolId: params.symbolId }
-    : { symbolName: params.symbolName, groupId: params.groupId };
+export async function getCandles(client: RestClient, params: z.infer<typeof getCandlesSchema>) {
+  const symbolSelector =
+    params.symbolId !== undefined
+      ? { symbolId: params.symbolId }
+      : { symbolName: params.symbolName, groupId: params.groupId };
 
   const body: Record<string, unknown> = {
     symbolSelector,
@@ -119,7 +123,7 @@ export const getConversionRateSchema = z.object({
 
 export async function getConversionRate(
   client: RestClient,
-  params: z.infer<typeof getConversionRateSchema>
+  params: z.infer<typeof getConversionRateSchema>,
 ) {
   return client.post("/admin/conversion-rate/single", {
     groupId: params.groupId,
@@ -135,10 +139,7 @@ export const getQuotesSchema = z.object({
   groupId: z.number().optional().describe("Group ID (default 1)"),
 });
 
-export async function getQuotes(
-  wsClient: WsClient,
-  params: z.infer<typeof getQuotesSchema>
-) {
+export async function getQuotes(wsClient: WsClient, params: z.infer<typeof getQuotesSchema>) {
   if (!wsClient.isConnected) {
     await wsClient.connect();
   }
@@ -149,11 +150,15 @@ export async function getQuotes(
   const results = await Promise.all(
     params.symbols.map(async (symbol) => {
       try {
-        const data = await wsClient.getSnapshot("L1", {
-          s: symbol,
-          g: groupId,
-          streaming: true,
-        }, { timeoutMs: 3000 });
+        const data = await wsClient.getSnapshot(
+          "L1",
+          {
+            s: symbol,
+            g: groupId,
+            streaming: true,
+          },
+          { timeoutMs: 3000 },
+        );
 
         // Extract quote data
         const quotes: unknown[] = [];
@@ -165,7 +170,7 @@ export async function getQuotes(
       } catch (e) {
         return { symbol, quote: null, error: e instanceof Error ? e.message : String(e) };
       }
-    })
+    }),
   );
 
   return results;
@@ -180,25 +185,33 @@ export const getIndicatorSchema = z.object({
     .enum(["1M", "5M", "15M", "30M", "1H", "4H", "D", "W", "M"])
     .describe("Candle interval: 1M, 5M, 15M, 30M, 1H, 4H, D, W, M"),
   indicator: z
-    .enum(["RSI", "MACD", "EMA", "SMA", "BollingerBands", "ATR", "Stochastic", "ADX", "VWAP", "CCI"])
+    .enum([
+      "RSI",
+      "MACD",
+      "EMA",
+      "SMA",
+      "BollingerBands",
+      "ATR",
+      "Stochastic",
+      "ADX",
+      "VWAP",
+      "CCI",
+    ])
     .describe("Indicator name"),
   period: z.number().optional().describe("Lookback period (default 14)"),
   candles: z.number().optional().describe("Number of candles to fetch (default 100, max 1000)"),
 });
 
-export async function getIndicator(
-  client: RestClient,
-  params: z.infer<typeof getIndicatorSchema>
-) {
+export async function getIndicator(client: RestClient, params: z.infer<typeof getIndicatorSchema>) {
   const period = params.period ?? 14;
   const maxCandles = Math.min(params.candles ?? 100, 1000);
 
   // Fetch candles
-  const candleResult = await client.post("/admin/charts/get", {
+  const candleResult = (await client.post("/admin/charts/get", {
     symbolSelector: { symbolName: params.symbolName, groupId: params.groupId ?? 1 },
     interval: params.interval,
     maxResults: maxCandles,
-  }) as { d?: Array<{ o: number; h: number; l: number; c: number; v?: number; t: number }> };
+  })) as { d?: Array<{ o: number; h: number; l: number; c: number; v?: number; t: number }> };
 
   const candles = candleResult.d ?? [];
   if (candles.length < period) {
@@ -208,11 +221,16 @@ export async function getIndicator(
   const close = candles.map((c) => c.c);
   const high = candles.map((c) => c.h);
   const low = candles.map((c) => c.l);
-  const open = candles.map((c) => c.o);
+  const _open = candles.map((c) => c.o);
   const volume = candles.map((c) => c.v ?? 0);
 
   let values: unknown;
-  let meta: Record<string, unknown> = { indicator: params.indicator, period, candles: candles.length, interval: params.interval };
+  let meta: Record<string, unknown> = {
+    indicator: params.indicator,
+    period,
+    candles: candles.length,
+    interval: params.interval,
+  };
 
   switch (params.indicator) {
     case "RSI":
@@ -225,7 +243,14 @@ export async function getIndicator(
       values = ti.ema({ values: close, period });
       break;
     case "MACD": {
-      const result = ti.macd({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false });
+      const result = ti.macd({
+        values: close,
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        SimpleMAOscillator: false,
+        SimpleMASignal: false,
+      });
       values = result;
       meta = { ...meta, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
       break;

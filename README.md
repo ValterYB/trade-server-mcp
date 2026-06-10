@@ -1,182 +1,280 @@
+<div align="center">
+
 # Trade Server MCP
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that gives AI assistants (GitHub Copilot, Claude, Cursor, etc.) direct access to the **YourBourse Trading Platform Admin API**. Instead of copy-pasting API responses or writing scripts, you can ask your AI assistant to check account balances, place trades, stream live quotes, analyze markets with technical indicators, or configure order routing — and it will call the Trade Server directly.
+**Trade on YourBourse Trade Server from Claude and any MCP-compatible AI — as a broker or as a trader**
 
-## What can it do?
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-7C3AED)](https://modelcontextprotocol.io/)
+![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen)
+![License](https://img.shields.io/badge/License-Proprietary-red.svg)
 
-> "Show me open positions on account 2"  
-> "Place a 0.1 lot EURUSD buy market order"  
-> "What's the current EURUSD bid/ask spread?"  
-> "Get the RSI(14) on EURUSD 1H candles"  
-> "Cancel all pending orders on account 2"  
-> "Show me the order routing configuration"  
-> "What's the EUR to USD conversion rate?"
+<br>
 
-The server exposes **38 tools** and **4 resources** across four categories:
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that connects AI assistants
+to a YourBourse Trade Server. Ask your AI to check your account, pull live quotes, place and
+manage orders, or — in broker mode — operate across every account, group, and routing rule on
+the server. No scripts, no copy-pasting API responses.
 
-### Trading (16 tools)
-| Tool | Description |
-|---|---|
-| `place_order` | Place Market, Limit, Stop, StopLimit, or CloseBy orders with optional SL/TP |
-| `cancel_order` | Cancel a single pending order by ID |
-| `cancel_all_orders` | Cancel all working orders on an account (optional symbol filter) |
-| `modify_order` | Modify order price or quantity |
-| `modify_order_sltp` | Add/modify/remove SL/TP on a pending order |
-| `force_delete_order` | Force-remove stuck orders that normal cancel can't handle |
-| `get_working_orders` | List active/pending orders |
-| `get_open_positions` | List open positions with current P/L |
-| `close_position` | Close a position (full or partial) |
-| `close_all_positions` | Close all positions on an account (optional symbol filter) |
-| `close_by` | Close two opposing hedged positions against each other |
-| `modify_position_sltp` | Set/modify/remove stop loss and take profit on a position |
-| `get_account_summary` | Complete account snapshot: state + positions + orders in one call |
-| `get_trade_history` | Historical trade executions (fills) |
-| `get_order_history` | Historical orders (filled, cancelled, rejected) |
-| `cash_transfer` | Deposit, withdraw, or adjust balance (supports Balance, Credit, Fee, Bonus, etc.) |
+<br>
 
-### Account (6 tools)
-| Tool | Description |
-|---|---|
-| `get_account_state` | Balance, equity, margin, free margin, unrealized P/L |
-| `get_account_info` | Account config: group, client, leverage, trading permissions |
-| `get_all_accounts` | List all trading accounts on the server |
-| `get_balances` | Financial state for ALL accounts at once (portfolio view) |
-| `get_transfer_history` | Cash transfer history (deposits, withdrawals, adjustments) |
-| `health_check` | Verify server connectivity and get version |
+[Getting Started](docs/GETTING_STARTED.md) · [Configuration](docs/CONFIGURATION.md) · [Tools Reference](docs/TOOLS_REFERENCE.md) · [Usage Examples](docs/USAGE_EXAMPLES.md) · [Architecture](docs/ARCHITECTURE.md)
 
-### Market Data (7 tools)
-| Tool | Description |
-|---|---|
-| `get_quote` | Live bid/ask quote for a single symbol via WebSocket L1 |
-| `get_quotes` | Live quotes for multiple symbols in parallel |
-| `get_market_depth` | Level 2 order book with multiple price levels |
-| `get_symbols` | List symbols with glob filter (e.g. `EUR*`, `*USD`) |
-| `get_candles` | OHLCV candlestick data (1M to Monthly, max 1000 per request) |
-| `get_conversion_rate` | Currency conversion rate (e.g. EUR→USD) using group price source |
-| `get_indicator` | Technical analysis: RSI, MACD, EMA, SMA, Bollinger Bands, ATR, Stochastic, ADX, VWAP, CCI |
+</div>
 
-### Configuration (9 tools)
-| Tool | Description |
-|---|---|
-| `get_groups` | List all trading groups |
-| `get_group` | Detailed group config: margin, commissions, symbol overrides |
-| `get_clients` | List all clients (account owners) |
-| `get_symbol_details` | Full symbol config: sessions, swaps, margin rates, tick/lot size |
-| `get_liquidity_connectors` | List all LPs with connection params and subscribed symbols |
-| `get_order_routing` | Current routing rules + version number |
-| `set_order_routing` | Replace all routing rules (requires version) |
-| `add_routing_rule` | Safely append a single rule without affecting existing ones |
-| `remove_routing_rule` | Remove a rule by index |
+---
 
-### MCP Resources (4)
-| URI | Description |
-|---|---|
-| `trade://symbols` | All available trading symbols |
-| `trade://groups` | All trading groups |
-| `trade://accounts` | All trading accounts |
-| `trade://connectors` | All liquidity connectors |
+## Highlights
 
-Resources provide static context that LLMs can reference without making tool calls.
+| Feature | Description |
+|---------|-------------|
+| **Two modes, one server** | **Client mode** for traders (scoped to your own account) and **admin mode** for broker operations (server-wide) — selected by the credentials you configure |
+| **26 trader tools / 38 broker tools** | Task-shaped tools covering trading, account monitoring, market data, and (admin) server configuration, plus MCP resources for static context |
+| **Live trading** | Market, Limit, Stop, StopLimit, and CloseBy orders with optional SL/TP; modify, cancel, partial close, flatten-everything composites |
+| **Account monitoring** | Balance, equity, margin, unrealized P/L, open positions, working orders, trade and transfer history — single calls or one-shot summaries |
+| **Market data & indicators** | Quotes, market depth, OHLCV candles, currency conversion; admin mode adds locally computed indicators (RSI, MACD, EMA, Bollinger Bands, and more) |
+| **HMAC auth with auto-refresh** | Every write is HMAC-SHA256 signed; client login sessions refresh automatically before expiry — no manual token handling |
+| **Safety by design** | Order-placing requests are never retried on connection errors (no duplicate fills); bulk tools report per-item outcomes; client sessions cannot touch other accounts |
+| **Zero codegen** | Every tool is hand-written with intent-rich descriptions your AI actually understands, and checked against the server's OpenAPI contract in tests |
 
-## Architecture
+---
 
-- **Structured error handling** — Errors return `{error, message}` JSON with semantic codes (`BAD_REQUEST`, `NOT_FOUND`, `RATE_LIMITED`, etc.) instead of raw stack traces
-- **WebSocket auto-reconnect** — Exponential backoff (1s → 16s, max 5 attempts) for market data feeds
-- **POST retry** — Automatic retry on connection failure (ECONNREFUSED/ENOTFOUND)
-- **Parallel operations** — `get_quotes`, `cancel_all_orders`, `close_all_positions` execute in parallel for efficiency
+## Quick Start
 
-## Requirements
-
-- Node.js 18 or newer
-- A YourBourse Trade Server instance with Admin API enabled
-- API key and secret key (generated from Trade Server admin panel)
-
-## Setup
-
-### VS Code / GitHub Copilot
-
-Add to your MCP settings (File → Preferences → Settings → search "mcp", or edit `.vscode/mcp.json`):
-
-```json
-{
-  "servers": {
-    "trade-server": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp"],
-      "env": {
-        "YB_API_KEY": "your-api-key",
-        "YB_SECRET_KEY": "your-secret-key",
-        "YB_BASE_URL": "https://your-instance.yourbourse.trade:port"
-      }
-    }
-  }
-}
-```
-
-### Claude Code
+**1. Clone and build** (Node.js 18+ required):
 
 ```bash
-claude mcp add trade-server -- npx -y github:yourbourse/trade-server-mcp
+git clone https://github.com/yourbourse/trade-server-mcp.git
+cd trade-server-mcp
+npm ci
+npm run build
 ```
 
-Set environment variables in `~/.claude/.env`:
-```
-YB_API_KEY=your-api-key
-YB_SECRET_KEY=your-secret-key
-YB_BASE_URL=https://your-instance.yourbourse.trade:port
-```
-
-### Claude Desktop / Cursor / Other MCP Clients
-
-Add to your MCP client configuration file:
+**2. Pick a mode and configure your MCP client.** For a trader on Claude Desktop, add to
+`claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "trade-server": {
-      "command": "npx",
-      "args": ["-y", "github:yourbourse/trade-server-mcp"],
+      "command": "node",
+      "args": ["<path-to-repo>/dist/index.js"],
       "env": {
-        "YB_API_KEY": "your-api-key",
-        "YB_SECRET_KEY": "your-secret-key",
-        "YB_BASE_URL": "https://your-instance.yourbourse.trade:port"
+        "YB_BASE_URL": "https://<your-server-host>:<port>",
+        "YB_MODE": "client",
+        "YB_LOGIN": "<login>",
+        "YB_PASSWORD": "<password>"
       }
     }
   }
 }
 ```
 
-## Environment Variables
+Broker administrators use `YB_MODE=admin` with `YB_API_KEY` / `YB_SECRET_KEY` instead. All
+variables, both modes, and snippets for Claude Code and other MCP clients are in
+[Configuration](docs/CONFIGURATION.md).
 
-| Variable | Required | Description |
+**3. Restart your MCP client** so it launches the server.
+
+**4. Ask your AI:** *"What's my account state?"*
+
+First time setting up? The [Getting Started guide](docs/GETTING_STARTED.md) walks through
+everything, including which credentials you need and how to verify the first tool call.
+
+---
+
+## Modes
+
+One process runs exactly one mode — the tool set is decided at startup from your credentials.
+
+| | Client mode (traders) | Admin mode (brokers) |
 |---|---|---|
-| `YB_API_KEY` | Yes | Public API token from Trade Server admin panel |
-| `YB_SECRET_KEY` | Yes | Secret key for HMAC-SHA256 request signing |
-| `YB_BASE_URL` | Yes | Trade Server URL including port (e.g. `https://myserver.yourbourse.trade:22236`) |
+| **Who it's for** | A trader with an account at a broker running a YourBourse Trade Server | The broker: operations and administration teams |
+| **Scope** | Your own account only — the session token *is* the scope, enforced by the server | Server-wide: every account, group, client, routing rule, and liquidity connector |
+| **Tools / resources** | 26 tools, 1 resource | 38 tools, 4 resources |
+| **Credentials** | `YB_LOGIN` + `YB_PASSWORD` (or a pre-issued token pair) | `YB_API_KEY` + `YB_SECRET_KEY` from the server admin panel |
+| **Trading** | On your account; no account parameter exists | On behalf of any account via `accountId` |
+| **Extras** | Rate-limit visibility, scoped balances | Cash transfers, order routing management, indicators, L1/L2 over WebSocket |
 
-## How Authentication Works
+Full guides: [Client Mode](docs/CLIENT_MODE.md) · [Admin Mode](docs/ADMIN_MODE.md)
 
-- **GET** requests: signed with `X-YB-API-Key` header only
-- **POST/PUT/DELETE** requests: additionally signed with HMAC-SHA256
-  - `X-YB-Timestamp` — microseconds since epoch
-  - `X-YB-Sign` — HMAC-SHA256 signature of `Content=<body>\nTimestamp=<ts>`
+---
 
-All authentication is handled automatically by the server — users don't need to worry about it.
+## Documentation
 
-## Development
+### Setup & Configuration
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/GETTING_STARTED.md) | From a fresh machine to your first successful tool call, step by step |
+| [Configuration](docs/CONFIGURATION.md) | Every environment variable, mode selection rules, and ready-to-paste client configs |
+
+### Using the Server
+
+| Guide | Description |
+|-------|-------------|
+| [Client Mode](docs/CLIENT_MODE.md) | The trader's guide: scoping model, what you can do, and what's deliberately impossible |
+| [Admin Mode](docs/ADMIN_MODE.md) | The broker's guide: server-wide operations, configuration tools, and safe usage |
+| [Tools Reference](docs/TOOLS_REFERENCE.md) | Every tool in both modes — descriptions, parameter tables, and example calls |
+| [Usage Examples](docs/USAGE_EXAMPLES.md) | Realistic conversations: what you say, which tools the AI calls, what comes back |
+
+### Reference & Internals
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | Components, module map, mode selection, and the life of a tool call |
+| [Authentication](docs/AUTHENTICATION.md) | HMAC-SHA256 signing, the three credential setups, token refresh, and failure handling |
+| [Security](docs/SECURITY.md) | Credential-handling guarantees, config-file hygiene, supply-chain stance, reporting |
+
+### Help & Contributing
+
+| Document | Description |
+|----------|-------------|
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Symptom-indexed fixes, from startup errors to old-server compatibility |
+| [FAQ](docs/FAQ.md) | Quick answers to the questions that come up most |
+| [Contributing](docs/CONTRIBUTING.md) | Dev setup, the hand-written-tools policy, how to add a tool, conventions |
+
+---
+
+## Architecture Overview
+
+```
++--------------------+      stdio (JSON-RPC / MCP)
+|     MCP client     | <-------------+
+| (Claude Desktop,   |               |
+|  Claude Code, ...) |               v
++--------------------+    +--------------------+
+                          |      index.ts      |
+                          |  parse env config, |
+                          |     pick a mode    |
+                          +---------+----------+
+                                    |
+                    +---------------+---------------+
+                    v                               v
+         +--------------------+         +---------------------+
+         | register-admin.ts  |         | register-client.ts  |
+         | 38 tools, 4 res.   |         | 26 tools, 1 res.    |
+         +---------+----------+         +----------+----------+
+                   |                               |
+                   v                               v
+         +--------------------+         +---------------------+
+         |   tools/admin/*    |         |   tools/client/*    |
+         +----+----------+----+         +----------+----------+
+              |          |                         |
+ quotes/depth |          +-----------+   +---------+
+              v                      v   v
+         +-----------+      +------------------------------+
+         | WsClient  |      |          RestClient          |
+         | (admin    |      |  HMAC signing, auth retry,   |
+         |  only)    |      |  semantic errors, ETag cache |
+         +-----+-----+      +---------------+--------------+
+               |                            |
+               v                            v
+         +---------------------------------------------+
+         |          YourBourse Trade Server            |
+         |       /api/v1 (REST)     /ws/v1 (WS)        |
+         +---------------------------------------------+
+```
+
+### Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `src/index.ts` | Entry point: parse config, build the auth provider and clients for the selected mode, register tools, connect stdio |
+| `src/config.ts` | Environment-variable parsing: mode selection and inference, validation, startup error messages |
+| `src/register-admin.ts` / `src/register-client.ts` | The single place where tool names and descriptions live, per mode |
+| `src/rest-client.ts` | Signed REST client: HMAC headers, semantic error mapping, ETag caching, 401 renew-and-retry, transport retry policy |
+| `src/ws-client.ts` | WebSocket client for live quotes and market depth (admin mode only) |
+| `src/auth/` | HMAC-SHA256 signing, static key credentials, and the client login lifecycle with auto-refresh |
+| `src/tools/admin/`, `src/tools/client/` | Tool implementations — a zod schema plus an async function per tool, grouped by category |
+
+The full picture — mode selection, the life of a tool call, retry policy, and design
+decisions — is in [Architecture](docs/ARCHITECTURE.md).
+
+---
+
+## Project Structure
+
+```
+trade-server-mcp/
+├── src/
+│   ├── index.ts               # Entry point: config → mode → register → stdio transport
+│   ├── config.ts              # Env parsing, mode selection & inference
+│   ├── register-admin.ts      # Registers the 38 admin tools + 4 resources
+│   ├── register-client.ts     # Registers the 26 client tools + 1 resource
+│   ├── tool-handler.ts        # Wraps tool results/errors for MCP
+│   ├── rest-client.ts         # Signed REST client (HMAC, retries, ETag, error mapping)
+│   ├── ws-client.ts           # WebSocket quotes/depth client (admin only)
+│   ├── auth/
+│   │   ├── admin-auth.ts      # HMAC-SHA256 signing + static credentials
+│   │   └── client-auth.ts     # Login sign-in, token auto-refresh, failure hints
+│   ├── tools/
+│   │   ├── admin/             # trading, account, market-data, config tool modules
+│   │   └── client/            # trading, account, market-data tool modules
+│   └── test/                  # node:test suite — 82 tests
+├── docs/                      # Full documentation set (see index above)
+├── reference/
+│   └── openapi.json           # Trade Server API contract the tools are checked against
+├── scripts/
+│   └── regression-admin.mjs   # Live stdio regression harness (admin | client)
+├── .github/workflows/ci.yml   # CI: lint, format check, type-check, tests
+├── eslint.config.js
+├── tsconfig.json
+├── package.json
+├── CHANGELOG.md
+└── LICENSE
+```
+
+---
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run dev` | Compile in watch mode |
+| `npm test` | Build and run the full test suite (82 tests, `node --test`) |
+| `npm run lint` | ESLint over the project |
+| `npm run format` / `npm run format:check` | Prettier write / verify |
+| `npm run type-check` | TypeScript type checking without emitting |
+| `npm start` | Run the built server directly (stdio) |
+
+### Live regression harness
+
+`scripts/regression-admin.mjs` drives the **built** server over raw stdio JSON-RPC against a
+real Trade Server — exactly like an MCP client would. Credentials come from the environment;
+nothing is hardcoded:
 
 ```bash
-git clone https://github.com/yourbourse/trade-server-mcp.git
-cd trade-server-mcp
-npm install
-npm run build
+# Admin mode
+YB_API_KEY=... YB_SECRET_KEY=... YB_BASE_URL=... node scripts/regression-admin.mjs admin
+
+# Client mode
+YB_MODE=client YB_LOGIN=... YB_PASSWORD=... YB_BASE_URL=... node scripts/regression-admin.mjs client
 ```
 
-To run locally instead of via `npx`, point your MCP config to the built file:
-```json
-{
-  "command": "node",
-  "args": ["/path/to/trade-server-mcp/dist/index.js"]
-}
-```
+Exit code 0 means all checks passed.
+
+---
+
+## Security
+
+Your password is never transmitted — in client login mode it is used only as the local HMAC
+signing secret for the sign-in request. Credentials live exclusively in your MCP client's
+configuration and the server's process environment; nothing is ever written to disk, logged,
+or echoed back to the AI. Order-placing requests are never retried on connection errors, so a
+network blip cannot turn into a duplicate fill. The project ships **no npm package by
+design**: distribution is GitHub clone + build, keeping the supply chain to four pinned
+runtime dependencies. Full details, recommended practices, and the vulnerability reporting
+process are in [SECURITY.md](docs/SECURITY.md).
+
+---
+
+## License
+
+Copyright (c) 2025-2026 YourBourse. All rights reserved.
+
+This software is proprietary and confidential. Unauthorized copying, distribution,
+modification, or use of this software, via any medium, is strictly prohibited. See
+[LICENSE](LICENSE) for terms.
