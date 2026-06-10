@@ -121,7 +121,7 @@ Example:
 
 #### `modify_position_sltp`
 
-> Set, modify or remove stop loss and/or take profit on one of your open positions. Pass 0 (or omit a field) to remove that side; omit both to remove both.
+> Set, modify or remove stop loss and/or take profit on one of your open positions. Pass 0 (or omit a field) to remove that side; omit both to remove both. To change only one side, re-send the other side's current value or it will be removed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
