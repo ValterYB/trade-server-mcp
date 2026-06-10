@@ -22,7 +22,19 @@ This guide takes you from a fresh machine to your first successful tool call.
 
 ## Install
 
-The server is distributed as source — clone, install, build:
+The server is distributed as source from this repository — never via the npm registry
+(a deliberate supply-chain choice, see [Security](./SECURITY.md)). There are two ways to
+run it:
+
+**Option A — no clone (recommended).** Let your MCP client fetch and run the server directly
+from GitHub, pinned to a release tag. Nothing to download manually; you just use
+`"command": "npx", "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"]` in your MCP
+configuration instead of a local file path. The first launch takes a little longer (npx
+fetches and builds the release once, then caches it). Requires Node.js 18+ and git.
+All full configuration examples in [Configuration](./CONFIGURATION.md) work with either
+option — just swap the `command`/`args` pair.
+
+**Option B — clone and build**, if you prefer a local checkout you can read and verify:
 
 ```bash
 git clone https://github.com/yourbourse/trade-server-mcp.git
@@ -31,11 +43,10 @@ npm ci
 npm run build
 ```
 
-This produces `dist/index.js`, which is the file your MCP client will run. There is nothing to
-install globally and no package to download from a registry — installing from source with a
-committed lockfile is a deliberate choice (see [Security](./SECURITY.md)).
+This produces `dist/index.js`, which is the file your MCP client will run
+(`"command": "node", "args": ["<path-to-repo>/dist/index.js"]`).
 
-To verify the build, you can run the test suite with `npm test`.
+To verify a local build, you can run the test suite with `npm test`.
 
 ## Choose your mode
 

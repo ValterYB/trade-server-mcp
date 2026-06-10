@@ -59,6 +59,12 @@ On Windows, write paths in JSON with doubled backslashes, e.g.
 Build the project first (`npm ci && npm run build`) so that `dist/index.js` exists —
 see [Getting Started](./GETTING_STARTED.md).
 
+> **No-clone alternative:** every example below also works without cloning anything.
+> Replace the `command`/`args` pair with
+> `"command": "npx", "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"]`
+> (requires Node.js 18+ and git; the first launch fetches and builds the pinned release,
+> then caches it). The `env` block stays exactly the same.
+
 ### Setup 1: Admin mode (broker administrators)
 
 **Claude Desktop** — add to `claude_desktop_config.json`:

@@ -42,24 +42,16 @@ the server. No scripts, no copy-pasting API responses.
 
 ## Quick Start
 
-**1. Clone and build** (Node.js 18+ required):
-
-```bash
-git clone https://github.com/yourbourse/trade-server-mcp.git
-cd trade-server-mcp
-npm ci
-npm run build
-```
-
-**2. Pick a mode and configure your MCP client.** For a trader on Claude Desktop, add to
-`claude_desktop_config.json`:
+**No-clone install (recommended).** Node.js 18+ and git are all you need — your MCP client
+fetches, builds, and runs the server straight from this repository, pinned to a release tag.
+For a trader on Claude Desktop, add to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -71,11 +63,26 @@ npm run build
 }
 ```
 
+The `#v1.1.0` pin makes the install immutable — see [Security](docs/SECURITY.md) for why we
+distribute from GitHub rather than the npm registry.
+
+**Or clone and build** if you prefer a local checkout:
+
+```bash
+git clone https://github.com/yourbourse/trade-server-mcp.git
+cd trade-server-mcp
+npm ci
+npm run build
+```
+
+then use `"command": "node", "args": ["<path-to-repo>/dist/index.js"]` with the same `env`
+block.
+
 Broker administrators use `YB_MODE=admin` with `YB_API_KEY` / `YB_SECRET_KEY` instead. All
 variables, both modes, and snippets for Claude Code and other MCP clients are in
 [Configuration](docs/CONFIGURATION.md).
 
-**3. Restart your MCP client** so it launches the server.
+**Finally, restart your MCP client** so it launches the server.
 
 **4. Ask your AI:** *"What's my account state?"*
 
