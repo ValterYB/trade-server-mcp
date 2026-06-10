@@ -118,7 +118,7 @@ try {
 
     const state = await request(4, "tools/call", { name: "get_account_state", arguments: {} });
     const stateText = toolText(state);
-    const hintRe = /server version predates the public client API/;
+    const hintRe = /CLIENT \(public\) API port/;
     check("get_account_state isError (old server expected)", state.result?.isError === true);
     check("get_account_state result contains server-version hint", hintRe.test(stateText));
     console.log("--- observed tool-result text ---");

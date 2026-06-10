@@ -64,6 +64,18 @@ test("modifyPositionSltp PUTs /sltp", async () => {
   assert.deepEqual(JSON.parse(captured[0].body!), { id: 9, tp: 1.2 });
 });
 
+test("modifyPositionSltp maps 0 to omission: sl 0 + tp 1.2 sends {id, tp} only", async () => {
+  // Sending sl:0 to the server does NOT remove the SL — it creates a
+  // zero-priced working order (verified live). Removal = omitting the field.
+  await t.modifyPositionSltp(client(), { positionId: 9, stopLoss: 0, takeProfit: 1.2 });
+  assert.deepEqual(JSON.parse(captured[0].body!), { id: 9, tp: 1.2 });
+});
+
+test("modifyPositionSltp with both 0 sends {id} only, which removes both sides", async () => {
+  await t.modifyPositionSltp(client(), { positionId: 9, stopLoss: 0, takeProfit: 0 });
+  assert.deepEqual(JSON.parse(captured[0].body!), { id: 9 });
+});
+
 test("getOpenPositions POSTs /positions with camelCase filter", async () => {
   respond = () => ({ positions: [] });
   await t.getOpenPositions(client(), { symbol: "EURUSD" });

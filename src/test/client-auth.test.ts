@@ -160,11 +160,14 @@ test("authFailureHint returns credentials hint after a 401 authorize failure", a
   auth.stop();
 });
 
-test("authFailureHint returns server-version hint after a 400 failure", async () => {
+test("authFailureHint returns port/server-version hint after a 400 failure", async () => {
   globalThis.fetch = (async () => new Response("bad request", { status: 400 })) as any;
   const auth = new ClientAuth("http://ts.local", { login: 1, password: "pw" });
   await assert.rejects(() => auth.authorize());
-  assert.match(auth.authFailureHint()!, /server version predates the public client API/);
+  assert.equal(
+    auth.authFailureHint(),
+    "The Trade Server rejected the sign-in request — check that YB_BASE_URL points to the CLIENT (public) API port: it is a different port from the admin API on the same server. If the port is right, the server version may predate the public client API; ask your broker.",
+  );
   auth.stop();
 });
 

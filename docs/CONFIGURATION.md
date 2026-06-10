@@ -14,7 +14,7 @@ unset.
 
 | Variable | Applies to | Required | Description |
 |---|---|---|---|
-| `YB_BASE_URL` | All modes | Yes | Base URL of your YourBourse Trade Server, including the scheme and port, with no trailing slash — for example `https://<your-server-host>:<port>`. The MCP appends `/api/v1/...` to this URL for every request. |
+| `YB_BASE_URL` | All modes | Yes | Base URL of your YourBourse Trade Server, including the scheme and port, with no trailing slash — for example `https://<your-server-host>:<port>`. The MCP appends `/api/v1/...` to this URL for every request. **The port depends on the mode**: the client (public) API and the admin API are served on different ports of the same Trade Server — use the client port for client mode and the admin port for admin mode; your broker or server operator tells you which is which. |
 | `YB_MODE` | All modes | Recommended | `admin` or `client`. Optional when the mode can be inferred from your credential variables (see below), but always safe to set explicitly. |
 | `YB_API_KEY` | Admin mode, or client mode with a token pair | Yes, in those setups | The API key (public half of the key pair) issued for your account. |
 | `YB_SECRET_KEY` | Admin mode, or client mode with a token pair | Yes, in those setups | The secret key (signing half of the key pair). It is used only to sign requests locally and is never transmitted. |

@@ -16,11 +16,11 @@ beforeEach(() => {
 
 const client = () => new RestClient("http://ts", new StaticCredentials("K", "S"));
 
-test("getAccountState POSTs /account/state with empty body", async () => {
+test("getAccountState POSTs /account/state with NO body (server rejects any payload)", async () => {
   await a.getAccountState(client());
   assert.equal(captured[0].url, "http://ts/api/v1/account/state");
   assert.equal(captured[0].method, "POST");
-  assert.equal(captured[0].body, "{}");
+  assert.equal(captured[0].body, undefined);
 });
 
 test("getBalances GETs /account/balances", async () => {
@@ -40,13 +40,13 @@ test("getTransferHistory POSTs /transfers with filter", async () => {
   assert.deepEqual(JSON.parse(captured[0].body!), { from: 1, maxResults: 5 });
 });
 
-test("getAccountSummary fans out to state + positions + open orders", async () => {
+test("getAccountSummary fans out to state (no body) + positions + open orders", async () => {
   await a.getAccountSummary(client());
   const calls = captured
-    .map((c) => ({ url: c.url, body: JSON.parse(c.body ?? "{}") }))
+    .map((c) => ({ url: c.url, body: c.body === undefined ? undefined : JSON.parse(c.body) }))
     .sort((a, b) => a.url.localeCompare(b.url));
   assert.deepEqual(calls, [
-    { url: "http://ts/api/v1/account/state", body: {} },
+    { url: "http://ts/api/v1/account/state", body: undefined }, // empty body required
     { url: "http://ts/api/v1/orders/open", body: { maxResults: 1000 } },
     { url: "http://ts/api/v1/positions", body: { maxResults: 1000 } },
   ]);

@@ -28,11 +28,15 @@ The reasoning is laid out in [Security → Supply-chain stance](./SECURITY.md#su
 
 ## Which Trade Server version do I need?
 
-Client mode requires a Trade Server new enough to expose the **public client API**. Older
-server versions (observed up to 26.4.x) do not support it — sign-in fails with HTTP 400 and
-data endpoints may drop connections. There is no version check you can run from the MCP
-itself, so the practical answer is: ask your broker to confirm their server supports client
-API access. See
+For most things, any reasonably current build: the core client API — sign-in, trading,
+positions, orders, account state, market data — works on older builds too, **as long as
+`YB_BASE_URL` points at the client (public) API port**, which is a different port from the
+admin API on the same server. (Pointing at the admin port is the most common reason sign-in
+is rejected — not an old server.) Two tools are the exception: `get_balances` and
+`get_limits` need a newer build — on older builds the server closes the connection for those
+calls, while everything else keeps working. There is no version check you can run from the
+MCP itself, so the practical answer is: ask your broker for the client API port, and ask them
+to update the server if you need those two tools. See
 [Troubleshooting → Older Trade Server versions](./TROUBLESHOOTING.md#older-trade-server-versions-server-compatibility).
 
 ## What happens if my password changes while the MCP is running?

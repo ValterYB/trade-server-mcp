@@ -86,17 +86,21 @@ export async function modifyOrderSltp(
 // ===== modify_position_sltp =====
 export const modifyPositionSltpSchema = z.object({
   positionId: z.number().describe("Position ID"),
-  stopLoss: z.number().optional().describe("New stop loss price (0 to remove)"),
-  takeProfit: z.number().optional().describe("New take profit price (0 to remove)"),
+  stopLoss: z.number().optional().describe("New stop loss price (0 or omit to remove)"),
+  takeProfit: z.number().optional().describe("New take profit price (0 or omit to remove)"),
 });
 
 export async function modifyPositionSltp(
   client: RestClient,
   params: z.infer<typeof modifyPositionSltpSchema>,
 ) {
+  // Server semantics (verified live): OMITTING sl/tp from the body removes
+  // that side; sending sl:0/tp:0 does NOT remove — it creates zero-priced
+  // working orders. So 0 ("remove" in the tool UX) maps to omission, and a
+  // call with neither field sends {id} only, which removes BOTH sides.
   const body: Record<string, unknown> = { id: params.positionId };
-  if (params.stopLoss !== undefined) body.sl = params.stopLoss;
-  if (params.takeProfit !== undefined) body.tp = params.takeProfit;
+  if (params.stopLoss !== undefined && params.stopLoss !== 0) body.sl = params.stopLoss;
+  if (params.takeProfit !== undefined && params.takeProfit !== 0) body.tp = params.takeProfit;
   return client.put("/sltp", body);
 }
 

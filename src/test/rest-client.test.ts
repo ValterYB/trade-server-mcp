@@ -1,7 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { RestClient, ApiError } from "../rest-client.js";
-import { StaticCredentials, CredentialsProvider } from "../auth/admin-auth.js";
+import { StaticCredentials, CredentialsProvider, generateSignature } from "../auth/admin-auth.js";
 
 type Captured = { url: string; method: string; headers: Record<string, string>; body?: string };
 let captured: Captured[] = [];
@@ -56,6 +56,14 @@ test("POST signs body with provider secret", async () => {
   assert.ok(h["X-YB-Timestamp"]);
   assert.ok(h["X-YB-Sign"]);
   assert.equal(captured[0].body, '{"symbolName":"EURUSD"}');
+});
+
+test("POST with undefined body sends NO body and signs the empty string", async () => {
+  const client = new RestClient("http://ts.local", new StaticCredentials("KEY", "SECRET"));
+  await client.post("/account/state");
+  assert.equal(captured[0].body, undefined); // no payload bytes at all
+  const h = captured[0].headers;
+  assert.equal(h["X-YB-Sign"], generateSignature("SECRET", "", Number(h["X-YB-Timestamp"])));
 });
 
 test("empty API key omits the header (pre-auth /authorize case)", async () => {

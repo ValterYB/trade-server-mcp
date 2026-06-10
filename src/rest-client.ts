@@ -134,7 +134,10 @@ export class RestClient {
           headers["If-Match"] = etag;
         }
 
-        const res = await fetch(url, { method, headers, body: bodyStr });
+        // An empty bodyStr means "no body at all": some endpoints (e.g. the
+        // client /account/state) reject any payload — even {} — but accept a
+        // body-less request signed over the empty string.
+        const res = await fetch(url, { method, headers, body: bodyStr || undefined });
 
         if (!res.ok) {
           const text = await res.text();
@@ -198,10 +201,12 @@ export class RestClient {
 
   async post<T = unknown>(
     path: string,
-    body: unknown,
+    body?: unknown,
     opts?: { retryOnConnectionError?: boolean },
   ): Promise<T> {
-    const bodyStr = JSON.stringify(body);
+    // Explicit: an undefined body means the request is sent with NO body and
+    // the signature is computed over the empty string.
+    const bodyStr = body === undefined ? "" : JSON.stringify(body);
     return this.withAuthRetry(() =>
       this.doSend<T>("POST", path, bodyStr, opts?.retryOnConnectionError ?? true),
     );

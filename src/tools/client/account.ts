@@ -4,7 +4,9 @@ import { RestClient } from "../../rest-client.js";
 export const getAccountStateSchema = z.object({});
 
 export async function getAccountState(client: RestClient) {
-  return client.post("/account/state", {});
+  // The server accepts /account/state ONLY with a completely empty request
+  // body — even {} is rejected with 400 (verified live). No body argument.
+  return client.post("/account/state");
 }
 
 export const getBalancesSchema = z.object({});
@@ -40,7 +42,8 @@ export const getAccountSummarySchema = z.object({});
 
 export async function getAccountSummary(client: RestClient) {
   const [state, positions, orders] = await Promise.all([
-    client.post("/account/state", {}),
+    // /account/state requires a completely empty body — see getAccountState.
+    client.post("/account/state"),
     // Explicit large page size — avoid server default page limits silently
     // truncating a trader's open positions or working orders in the summary.
     client.post("/positions", { maxResults: 1000 }),

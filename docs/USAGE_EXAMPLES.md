@@ -120,13 +120,15 @@ is placed.
 **Tool calls:**
 
 1. `get_open_positions` — `{}` — find every position, its open price, and current P/L.
-2. `modify_position_sltp` — `{ "positionId": 67890, "stopLoss": 1.0850 }` — once per winning
-   position, with `stopLoss` set to that position's open price (take profit untouched because
-   it's omitted).
+2. `modify_position_sltp` — `{ "positionId": 67890, "stopLoss": 1.0850, "takeProfit": 1.0950 }`
+   — once per winning position, with `stopLoss` set to that position's open price and
+   `takeProfit` re-sent with its current value. **Careful:** a field you omit (or set to `0`)
+   is **removed** — so to keep an existing take profit, include it with its current price
+   (which step 1 returned).
 
-**What you get back:** the position list, then a confirmation per modified position. Setting a
-price to `0` removes that side instead — e.g. `{ "positionId": 67890, "takeProfit": 0 }`
-drops the TP entirely.
+**What you get back:** the position list, then a confirmation per modified position. Omitting
+a side or setting it to `0` removes it — e.g. `{ "positionId": 67890, "stopLoss": 1.0850 }`
+alone would move the stop **and drop the TP entirely**.
 
 ---
 

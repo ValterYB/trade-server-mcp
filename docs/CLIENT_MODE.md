@@ -43,9 +43,10 @@ carries a targeted hint telling you which of the three likely causes applies:
 
   > Sign-in to the Trade Server failed: check YB_LOGIN and YB_PASSWORD.
 
-- Server too old (it doesn't understand the sign-in request):
+- Wrong port or server too old (the server rejected the sign-in request — most often
+  `YB_BASE_URL` points at the admin API port instead of the client port):
 
-  > The Trade Server rejected the sign-in request format — this usually means the server version predates the public client API. Ask your broker to confirm the server supports client API access.
+  > The Trade Server rejected the sign-in request — check that YB_BASE_URL points to the CLIENT (public) API port: it is a different port from the admin API on the same server. If the port is right, the server version may predate the public client API; ask your broker.
 
 - Connectivity (the server could not be reached at all):
 

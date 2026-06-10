@@ -11,10 +11,14 @@ This guide takes you from a fresh machine to your first successful tool call.
 - **A YourBourse Trade Server with API access**, and credentials for it (see
   [Choose your mode](#choose-your-mode) below for which credentials you need).
 
-> **Server version note:** trader (client) mode uses the server's public client API, which
-> requires a current Trade Server version. If sign-in is rejected even though your
-> credentials are correct, your server may predate the public client API — see
-> [Troubleshooting](./TROUBLESHOOTING.md) and ask your broker to confirm.
+> **Port note:** the client (public) API and the admin API are served on **different ports**
+> of the same Trade Server — use the client port for client mode and the admin port for admin
+> mode; your broker or server operator tells you which is which.
+>
+> **Server version note:** trader (client) mode uses the server's public client API. If
+> sign-in is rejected even though your credentials are correct, first check you are using the
+> client port (not the admin port); if the port is right, your server may predate the public
+> client API — see [Troubleshooting](./TROUBLESHOOTING.md) and ask your broker to confirm.
 
 ## Install
 

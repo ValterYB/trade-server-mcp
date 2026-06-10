@@ -121,13 +121,13 @@ Example:
 
 #### `modify_position_sltp`
 
-> Set, modify or remove stop loss and/or take profit on one of your open positions. Set price to 0 to remove an existing SL/TP.
+> Set, modify or remove stop loss and/or take profit on one of your open positions. Pass 0 (or omit a field) to remove that side; omit both to remove both.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `positionId` | number | Yes | Position ID |
-| `stopLoss` | number | No | New stop loss price (0 to remove) |
-| `takeProfit` | number | No | New take profit price (0 to remove) |
+| `stopLoss` | number | No | New stop loss price (0 or omit to remove) |
+| `takeProfit` | number | No | New take profit price (0 or omit to remove) |
 
 Example:
 
@@ -313,6 +313,9 @@ Example:
 
 No parameters.
 
+> **Note:** May not be available on older Trade Server builds (the server closes the
+> connection); all other tools work.
+
 Example:
 
 ```json
@@ -343,6 +346,9 @@ Example:
 > Get the API rate limits that apply to your session.
 
 No parameters.
+
+> **Note:** May not be available on older Trade Server builds (the server closes the
+> connection); all other tools work.
 
 Example:
 
