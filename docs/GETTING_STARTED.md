@@ -70,10 +70,11 @@ For a deeper look at each persona, see [Admin Mode](./ADMIN_MODE.md) and
 
 ## First connection
 
-1. **Add the server to your MCP client's configuration**, pointing it at `dist/index.js` with
-   the environment variables for your mode. [Configuration](./CONFIGURATION.md) has complete
-   copy-paste examples for Claude Desktop, Claude Code, and generic MCP clients, for all three
-   credential setups.
+1. **Add the server to your MCP client's configuration** with the environment variables for
+   your mode. [Configuration](./CONFIGURATION.md) has complete copy-paste examples for Claude
+   Desktop, Claude Code, and generic MCP clients, for all three credential setups — use the
+   npx one-liner (Option A), or your local `dist/index.js` path if you cloned and built the
+   repo (Option B).
 
 2. **Restart your MCP client** (for Claude Desktop, fully quit and reopen the app) so it picks
    up the new server.

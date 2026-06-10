@@ -101,8 +101,9 @@ unchanged.
 ## Can I use this with MCP clients other than Claude?
 
 Yes. The server speaks standard MCP over **stdio**, so any MCP-compatible client that can
-launch a stdio server works: configure it to run `node <path-to-repo>/dist/index.js` with the
-environment variables for your mode. See
+launch a stdio server works: configure it to run
+`npx -y github:yourbourse/trade-server-mcp#v1.1.0` (or `node <path-to-repo>/dist/index.js`
+if you cloned the repo) with the environment variables for your mode. See
 [Configuration → Other MCP clients](./CONFIGURATION.md#other-mcp-clients).
 
 ## Where next

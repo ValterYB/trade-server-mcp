@@ -51,19 +51,11 @@ Two notes worth remembering:
 ## Configuration examples
 
 The examples below use placeholders — replace `<your-server-host>:<port>`, `<api-key>`,
-`<secret-key>`, `<login>`, `<password>`, `<broker-company-name>`, and
-`<path-to-repo>` (the folder where you cloned this repository) with your own values.
-On Windows, write paths in JSON with doubled backslashes, e.g.
-`"C:\\Users\\you\\trade-server-mcp\\dist\\index.js"`.
+`<secret-key>`, `<login>`, `<password>`, and `<broker-company-name>` with your own values.
 
-Build the project first (`npm ci && npm run build`) so that `dist/index.js` exists —
-see [Getting Started](./GETTING_STARTED.md).
-
-> **No-clone alternative:** every example below also works without cloning anything.
-> Replace the `command`/`args` pair with
-> `"command": "npx", "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"]`
-> (requires Node.js 18+ and git; the first launch fetches and builds the pinned release,
-> then caches it). The `env` block stays exactly the same.
+Requirements: **Node.js 18+** and **git**. On the first launch, npx fetches and builds the
+pinned release from GitHub then caches it — subsequent starts are instant. When a newer release
+tag is available, update the `#v1.1.0` pin in your config to that tag.
 
 ### Setup 1: Admin mode (broker administrators)
 
@@ -73,8 +65,8 @@ see [Getting Started](./GETTING_STARTED.md).
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "admin",
@@ -94,7 +86,7 @@ claude mcp add trade-server \
   --env YB_MODE=admin \
   --env YB_API_KEY=<api-key> \
   --env YB_SECRET_KEY=<secret-key> \
-  -- node <path-to-repo>/dist/index.js
+  -- npx -y github:yourbourse/trade-server-mcp#v1.1.0
 ```
 
 **Claude Code** — or declare it in your project's `.mcp.json`:
@@ -103,8 +95,8 @@ claude mcp add trade-server \
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "admin",
@@ -124,8 +116,8 @@ claude mcp add trade-server \
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -148,7 +140,7 @@ claude mcp add trade-server \
   --env YB_MODE=client \
   --env YB_LOGIN=<login> \
   --env YB_PASSWORD=<password> \
-  -- node <path-to-repo>/dist/index.js
+  -- npx -y github:yourbourse/trade-server-mcp#v1.1.0
 ```
 
 **Claude Code** — or declare it in your project's `.mcp.json`:
@@ -157,8 +149,8 @@ claude mcp add trade-server \
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -180,8 +172,8 @@ claude mcp add trade-server \
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -201,7 +193,7 @@ claude mcp add trade-server \
   --env YB_MODE=client \
   --env YB_API_KEY=<api-key> \
   --env YB_SECRET_KEY=<secret-key> \
-  -- node <path-to-repo>/dist/index.js
+  -- npx -y github:yourbourse/trade-server-mcp#v1.1.0
 ```
 
 **Claude Code** — or declare it in your project's `.mcp.json`:
@@ -210,8 +202,8 @@ claude mcp add trade-server \
 {
   "mcpServers": {
     "trade-server": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:yourbourse/trade-server-mcp#v1.1.0"],
       "env": {
         "YB_BASE_URL": "https://<your-server-host>:<port>",
         "YB_MODE": "client",
@@ -223,11 +215,36 @@ claude mcp add trade-server \
 }
 ```
 
+> **Running from a local clone:** if you cloned and built the repo (see
+> [Getting Started](./GETTING_STARTED.md)), replace the `command`/`args` pair above with
+> `"command": "node", "args": ["<path-to-repo>/dist/index.js"]`. The `env` block stays
+> exactly the same. Example for Claude Desktop:
+>
+> ```json
+> {
+>   "mcpServers": {
+>     "trade-server": {
+>       "command": "node",
+>       "args": ["<path-to-repo>/dist/index.js"],
+>       "env": {
+>         "YB_BASE_URL": "https://<your-server-host>:<port>",
+>         "YB_MODE": "client",
+>         "YB_LOGIN": "<login>",
+>         "YB_PASSWORD": "<password>"
+>       }
+>     }
+>   }
+> }
+> ```
+>
+> On Windows, write the path with doubled backslashes, e.g.
+> `"C:\\Users\\you\\trade-server-mcp\\dist\\index.js"`.
+
 ### Other MCP clients
 
 Any MCP-compatible client that supports stdio servers can run the Trade Server MCP. Configure it
-to launch the command `node <path-to-repo>/dist/index.js` over the **stdio** transport, with the
-environment variables from whichever setup above matches your situation. There is no HTTP/SSE
+to launch `npx -y github:yourbourse/trade-server-mcp#v1.1.0` over the **stdio** transport, with
+the environment variables from whichever setup above matches your situation. There is no HTTP/SSE
 endpoint — the server communicates exclusively over stdin/stdout, and writes its log lines to
 stderr.
 
