@@ -203,33 +203,51 @@ export class WsClient {
 
     await this.ensureConnected();
 
-    return new Promise<unknown[]>(async (resolve, reject) => {
-      const timer = setTimeout(() => {
+    return new Promise<unknown[]>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
         this.subscriptionHandlers.delete(reqId);
-        this.unsubscribe(channel, payload, reqId);
+        // unsubscribe is async, so a synchronous throw inside it surfaces as a rejected promise that
+        // a try/catch here would NOT catch — swallow it with .catch to keep this best-effort.
+        void this.unsubscribe(channel, payload, reqId).catch(() => {
+          /* best-effort: the socket may already be closed */
+        });
+      };
+      // settled guard: once we resolve/reject, later handlers (a late subscribe ack after the
+      // fallback already fired, or vice-versa) must no-op — no double cleanup, no extra timer.
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
         resolve(results);
-      }, timeout);
+      };
+      const fail = (err: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      };
 
       this.subscriptionHandlers.set(reqId, (data) => {
         results.push(data);
       });
 
-      try {
-        await this.subscribe(channel, payload, reqId);
-      } catch (err) {
-        clearTimeout(timer);
-        this.subscriptionHandlers.delete(reqId);
-        reject(err instanceof Error ? err : new Error(String(err)));
-        return;
-      }
+      // Fallback: if subscribe never resolves, resolve with whatever arrived after `timeout`.
+      let timer = setTimeout(finish, timeout);
 
-      // Give time for streaming data after snapshot
-      setTimeout(() => {
-        clearTimeout(timer);
-        this.subscriptionHandlers.delete(reqId);
-        this.unsubscribe(channel, payload, reqId);
-        resolve(results);
-      }, timeout);
+      // Non-async executor: drive the subscribe promise with .then/.catch so a rejection can never
+      // leak as an unhandled rejection (an async Promise executor would not reject the outer promise).
+      this.subscribe(channel, payload, reqId)
+        .then(() => {
+          if (settled) return; // fallback already fired — don't reschedule or double-clean
+          // Subscribe succeeded — restart the timer as a streaming window so the caller always
+          // gets the full window after a successful subscribe.
+          clearTimeout(timer);
+          timer = setTimeout(finish, timeout);
+        })
+        .catch(fail);
     });
   }
 
