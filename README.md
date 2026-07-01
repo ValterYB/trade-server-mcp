@@ -5,7 +5,7 @@
 **Trade on a YourBourse account from Claude and other AI assistants — just by asking.**
 
 [![CI](https://github.com/yourbourse/trade-server-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/yourbourse/trade-server-mcp/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.0.4-blue)](https://github.com/yourbourse/trade-server-mcp/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue)](https://github.com/yourbourse/trade-server-mcp/blob/main/CHANGELOG.md)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-7C3AED)](https://modelcontextprotocol.io/)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 ![License](https://img.shields.io/badge/License-Proprietary-red.svg)
@@ -32,7 +32,7 @@ You'll be talking to your trading account through your AI assistant in about **1
 
 <br>
 
-For traders (client mode) — no Node, git, or config file needed.
+For traders **and** managers/brokers — no Node, git, or config file needed. The extension auto-detects your mode from the credentials you enter: **login + password → trader (Public API)**, **API key + secret → manager (Admin API)**.
 
 **Download** `trade-server-mcp.mcpb` from the [latest release](https://github.com/yourbourse/trade-server-mcp/releases/latest) (under **Assets**), then in Claude Desktop:
 
@@ -48,7 +48,7 @@ For traders (client mode) — no Node, git, or config file needed.
 
    ![Choose the .mcpb file](docs/images/mcpb-setup/03-choose-file.png)
 
-4. Review (**Version 2.0.1** or later, "All requirements met") → **Install**
+4. Review (**Version 2.1.0** or later — manager mode needs 2.1.0+ — and "All requirements met") → **Install**
 
    ![Extension preview](docs/images/mcpb-setup/04-preview-install.png)
 
@@ -56,7 +56,7 @@ For traders (client mode) — no Node, git, or config file needed.
 
    ![Confirm install](docs/images/mcpb-setup/05-confirm-install.png)
 
-6. Fill the **Configure** form (server address, login, password, optional broker) → **Save**
+6. Fill the **Configure** form → **Save** — traders enter **login + password**; managers/brokers enter an **API key + secret** (fill only one set; server address + optional broker apply either way)
 
    ![Configure fields](docs/images/mcpb-setup/06-configure.png)
 
