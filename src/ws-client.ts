@@ -1,9 +1,8 @@
 import WebSocket from "ws";
-import { AuthConfig } from "./auth/admin-auth.js";
+import { CredentialsProvider } from "./auth/admin-auth.js";
 
 export class WsClient {
   private ws: WebSocket | null = null;
-  private config: AuthConfig;
   private reqCounter = 0;
   private pendingRequests: Map<
     string,
@@ -19,11 +18,10 @@ export class WsClient {
   private isShuttingDown = false;
 
   constructor(
-    config: AuthConfig,
+    private baseUrl: string,
+    private provider: CredentialsProvider,
     private wsFactory: (url: string) => WebSocket = (url) => new WebSocket(url),
-  ) {
-    this.config = config;
-  }
+  ) {}
 
   get isConnected(): boolean {
     return this.connected;
@@ -35,9 +33,7 @@ export class WsClient {
 
     // Anchored + case-insensitive: an uppercase scheme (e.g. "HTTPS://") passes config validation
     // (URL.protocol is normalized there) but keeps its original case in the raw baseUrl string.
-    const wsUrl = this.config.baseUrl
-      .replace(/^https:\/\//i, "wss://")
-      .replace(/^http:\/\//i, "ws://");
+    const wsUrl = this.baseUrl.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
     const url = `${wsUrl}/ws/v1`;
 
     return new Promise<void>((resolve, reject) => {
@@ -143,7 +139,9 @@ export class WsClient {
     this.stopPingPong();
     this.pingInterval = setInterval(() => {
       if (this.ws && this.connected) {
-        this.ws.send(JSON.stringify({ m: "ping", h: { "X-YB-API-Key": this.config.apiKey } }));
+        this.ws.send(
+          JSON.stringify({ m: "ping", h: { "X-YB-API-Key": this.provider.getApiKey() } }),
+        );
       }
     }, 15000);
   }
@@ -166,12 +164,26 @@ export class WsClient {
     payload: Record<string, unknown>,
     reqId: string,
   ): Promise<unknown> {
+    // A login-based provider has no key until its first successful sign-in (the server
+    // registers tools even when the startup sign-in failed). Try once to recover before
+    // subscribing — the provider's single-flight guard coalesces concurrent attempts.
+    // If recovery fails (returns false OR throws), the frame still goes out and the
+    // server rejects it cleanly.
+    let apiKey = this.provider.getApiKey();
+    if (!apiKey && this.provider.handleUnauthorized) {
+      try {
+        await this.provider.handleUnauthorized();
+      } catch {
+        // proceed without a key — the server's rejection is the error surface
+      }
+      apiKey = this.provider.getApiKey();
+    }
     const msg = {
       m: "subscribe" as const,
       c: channel,
       p: payload,
       h: {
-        "X-YB-API-Key": this.config.apiKey,
+        "X-YB-API-Key": apiKey,
         "X-YB-LOCALE": "en" as const,
       },
       reqId,
@@ -191,7 +203,7 @@ export class WsClient {
       c: channel,
       p: payload,
       h: {
-        "X-YB-API-Key": this.config.apiKey,
+        "X-YB-API-Key": this.provider.getApiKey(),
         "X-YB-LOCALE": "en" as const,
       },
       reqId,
