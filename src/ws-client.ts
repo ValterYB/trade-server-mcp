@@ -16,11 +16,21 @@ export class WsClient {
   private maxReconnectAttempts = 5;
   private reconnecting = false;
   private isShuttingDown = false;
+  // In-flight connect(), shared by concurrent callers so a single disconnected client can never open
+  // two sockets at once (which would orphan one, leaking listeners and spurious reconnects).
+  private connecting: Promise<void> | null = null;
+  // Bounds the handshake so a black-holed connection can't hang connect() forever.
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  // fail() callbacks for in-flight getSnapshot calls: a socket drop must reject them instead of
+  // letting a snapshot resolve with partial/empty data. Registered for the whole call — a pre-ack
+  // drop is also covered by pendingRequests, so this specifically catches a drop AFTER the ack.
+  private snapshotFailers = new Set<(err: Error) => void>();
 
   constructor(
     private baseUrl: string,
     private provider: CredentialsProvider,
     private wsFactory: (url: string) => WebSocket = (url) => new WebSocket(url),
+    private connectTimeoutMs: number = 10_000,
   ) {}
 
   get isConnected(): boolean {
@@ -29,6 +39,9 @@ export class WsClient {
 
   async connect(): Promise<void> {
     if (this.connected) return;
+    // Single-flight: concurrent callers (e.g. a get_quotes fan-out on a fresh client) share one
+    // attempt instead of each opening a socket. Cleared in the finally once the attempt settles.
+    if (this.connecting) return this.connecting;
     this.isShuttingDown = false;
 
     // Anchored + case-insensitive: an uppercase scheme (e.g. "HTTPS://") passes config validation
@@ -36,47 +49,94 @@ export class WsClient {
     const wsUrl = this.baseUrl.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
     const url = `${wsUrl}/ws/v1`;
 
-    return new Promise<void>((resolve, reject) => {
-      let opened = false;
-      this.ws = this.wsFactory(url);
+    this.connecting = new Promise<void>((resolve, reject) => {
+      // `settled` = the connect() promise resolved or rejected (gates late/duplicate events, incl. an
+      // "open" that arrives after the timeout already rejected). `established` = the socket actually
+      // opened, which alone permits an auto-reconnect on a later close.
+      let settled = false;
+      let established = false;
+      const ws = this.wsFactory(url);
+      this.ws = ws;
 
-      this.ws.on("open", () => {
-        opened = true;
+      const clearConnectTimer = () => {
+        if (this.connectTimer) {
+          clearTimeout(this.connectTimer);
+          this.connectTimer = null;
+        }
+      };
+
+      // Bound the handshake: a black-holed connection fires neither open nor close/error, so without
+      // this connect() would hang forever (the REST transport already bounds its calls this way).
+      this.connectTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        this.connectTimer = null;
+        reject(new Error(`WebSocket connect timed out after ${this.connectTimeoutMs}ms`));
+        try {
+          ws.close();
+        } catch {
+          /* best-effort: closing a half-open socket */
+        }
+      }, this.connectTimeoutMs);
+
+      ws.on("open", () => {
+        if (settled) return; // a late open after a timeout/error must not flip us to connected
+        settled = true;
+        established = true;
+        clearConnectTimer();
         this.connected = true;
         this.startPingPong();
         resolve();
       });
 
-      this.ws.on("message", (data) => {
+      ws.on("message", (data) => {
+        if (this.ws !== ws) return; // ignore a stale socket a newer connect already replaced
         this.handleMessage(data.toString());
       });
 
-      this.ws.on("close", () => {
+      ws.on("close", () => {
+        // A previous (timed-out/abandoned) socket can emit close after a newer connect replaced
+        // this.ws — once this attempt has settled it must not touch the current connection. An
+        // UNSETTLED attempt still runs (e.g. disconnect() nulls this.ws mid-connect) so its
+        // connect() promise is settled instead of hanging.
+        if (this.ws !== ws && settled) return;
         this.connected = false;
         this.stopPingPong();
         this.rejectPending(new Error("WebSocket closed"));
-        if (!opened) {
+        if (!settled) {
           // Closed before it ever opened (server refused, or disconnect mid-connect): settle the
           // connect() promise so callers awaiting connect()/ensureConnected() don't hang forever.
-          opened = true;
+          settled = true;
+          clearConnectTimer();
           reject(new Error("WebSocket closed before connecting"));
           return;
         }
+        // Only an established connection that dropped may auto-reconnect — never a failed or
+        // timed-out attempt (whose close arrives after we already rejected).
+        if (!established) return;
         if (this.isShuttingDown) return; // explicit shutdown is terminal
         this.attemptReconnect();
       });
 
-      this.ws.on("error", (err) => {
-        if (!opened) {
-          opened = true;
+      ws.on("error", (err) => {
+        if (!settled) {
+          settled = true;
+          clearConnectTimer();
           reject(err);
         }
       });
 
-      this.ws.on("ping", (data) => {
-        this.ws?.pong(data);
+      ws.on("ping", (data) => {
+        if (this.ws !== ws) return; // ignore a stale socket a newer connect already replaced
+        ws.pong(data);
       });
     });
+
+    try {
+      await this.connecting;
+    } finally {
+      this.connecting = null;
+    }
   }
 
   /** Ensure connected, auto-reconnect if needed */
@@ -119,6 +179,10 @@ export class WsClient {
 
   disconnect() {
     this.isShuttingDown = true;
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
     this.stopPingPong();
     this.rejectPending(new Error("WebSocket disconnected"));
     this.subscriptionHandlers.clear();
@@ -133,6 +197,10 @@ export class WsClient {
   private rejectPending(err: Error) {
     for (const { reject } of this.pendingRequests.values()) reject(err);
     this.pendingRequests.clear();
+    // Snapshots past their subscribe ack are no longer in pendingRequests; fail them too so a socket
+    // drop mid-stream surfaces as an error rather than resolving with partial/empty data.
+    for (const fail of [...this.snapshotFailers]) fail(err);
+    this.snapshotFailers.clear();
   }
 
   private startPingPong() {
@@ -231,6 +299,7 @@ export class WsClient {
       let settled = false;
       const cleanup = () => {
         this.subscriptionHandlers.delete(reqId);
+        this.snapshotFailers.delete(fail);
         // unsubscribe is async, so a synchronous throw inside it surfaces as a rejected promise that
         // a try/catch here would NOT catch — swallow it with .catch to keep this best-effort.
         void this.unsubscribe(channel, payload, reqId).catch(() => {
@@ -253,6 +322,11 @@ export class WsClient {
         cleanup();
         reject(err instanceof Error ? err : new Error(String(err)));
       };
+      // Register for the whole call so a socket drop (via rejectPending) fails this snapshot instead
+      // of leaving it to time out with partial data. A pre-ack drop is also caught by pendingRequests
+      // (the subscribe promise rejects → .catch(fail)); the settled guard makes the extra call a
+      // no-op. cleanup() deregisters it on settle.
+      this.snapshotFailers.add(fail);
 
       this.subscriptionHandlers.set(reqId, (data) => {
         results.push(data);
