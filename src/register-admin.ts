@@ -84,6 +84,14 @@ import {
   getGroups,
   getGroupSchema,
   getGroup,
+  updateGroupPlanSchema,
+  updateGroupPlan,
+  updateGroupCommitSchema,
+  updateGroupCommit,
+  deleteGroupPlanSchema,
+  deleteGroupPlan,
+  deleteGroupCommitSchema,
+  deleteGroupCommit,
   getClientsSchema,
   getClients,
   getOrderRoutingSchema,
@@ -98,6 +106,90 @@ import {
   getLiquidityConnectors,
   getSymbolDetailsSchema,
   getSymbolDetails,
+  updateSymbolPlanSchema,
+  updateSymbolPlan,
+  updateSymbolCommitSchema,
+  updateSymbolCommit,
+  deleteSymbolPlanSchema,
+  deleteSymbolPlan,
+  deleteSymbolCommitSchema,
+  deleteSymbolCommit,
+  updateAccountPlanSchema,
+  updateAccountPlan,
+  updateAccountCommitSchema,
+  updateAccountCommit,
+  deleteAccountPlanSchema,
+  deleteAccountPlan,
+  deleteAccountCommitSchema,
+  deleteAccountCommit,
+  getClientSchema,
+  getClient,
+  updateClientPlanSchema,
+  updateClientPlan,
+  updateClientCommitSchema,
+  updateClientCommit,
+  deleteClientPlanSchema,
+  deleteClientPlan,
+  deleteClientCommitSchema,
+  deleteClientCommit,
+  getLiquidityConnectorSchema,
+  getLiquidityConnector,
+  updateLiquidityConnectorPlanSchema,
+  updateLiquidityConnectorPlan,
+  updateLiquidityConnectorCommitSchema,
+  updateLiquidityConnectorCommit,
+  deleteLiquidityConnectorPlanSchema,
+  deleteLiquidityConnectorPlan,
+  deleteLiquidityConnectorCommitSchema,
+  deleteLiquidityConnectorCommit,
+  getHolidaysSchema,
+  getHolidays,
+  getHolidaySchema,
+  getHoliday,
+  updateHolidayPlanSchema,
+  updateHolidayPlan,
+  updateHolidayCommitSchema,
+  updateHolidayCommit,
+  deleteHolidayPlanSchema,
+  deleteHolidayPlan,
+  deleteHolidayCommitSchema,
+  deleteHolidayCommit,
+  getManagersSchema,
+  getManagers,
+  getManagerSchema,
+  getManager,
+  getManagerSelfSchema,
+  getManagerSelf,
+  updateManagerPlanSchema,
+  updateManagerPlan,
+  updateManagerCommitSchema,
+  updateManagerCommit,
+  deleteManagerPlanSchema,
+  deleteManagerPlan,
+  deleteManagerCommitSchema,
+  deleteManagerCommit,
+  getTokensSchema,
+  getTokens,
+  createSymbolPlanSchema,
+  createSymbolPlan,
+  createSymbolCommitSchema,
+  createSymbolCommit,
+  createGroupPlanSchema,
+  createGroupPlan,
+  createGroupCommitSchema,
+  createGroupCommit,
+  createHolidayPlanSchema,
+  createHolidayPlan,
+  createHolidayCommitSchema,
+  createHolidayCommit,
+  createClientPlanSchema,
+  createClientPlan,
+  createClientCommitSchema,
+  createClientCommit,
+  createAccountPlanSchema,
+  createAccountPlan,
+  createAccountCommitSchema,
+  createAccountCommit,
   healthCheckSchema,
   healthCheck,
 } from "./tools/admin/config.js";
@@ -396,11 +488,428 @@ export function registerAdminTools(
     toolHandler((params) => getGroup(restClient, params)),
   );
 
+  server.registerTool(
+    "update_group_plan",
+    {
+      description:
+        "STEP 1 of editing a trading group's server-wide configuration — preview WITHOUT writing. Reads the current group (by groupId from get_groups), applies your partial `updates` (any top-level fields, e.g. defaultLeverage, marginCall, stopout), and returns a field-by-field diff plus a commitToken. Show the diff; only after the user confirms, call update_group_commit. Nothing is written.",
+      inputSchema: updateGroupPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateGroupPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_group_commit",
+    {
+      description:
+        "STEP 2 — apply the group edit previewed by update_group_plan. Requires the commitToken from that preview. Writes a LIVE, server-wide change to the group via an AI assistant — only call after the user has reviewed the diff and explicitly confirmed.",
+      inputSchema: updateGroupCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateGroupCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_group_plan",
+    {
+      description:
+        "STEP 1 of deleting a trading group — preview WITHOUT deleting. Reads the target group (by groupId from get_groups) and returns what will be deleted plus a commitToken. Show it; only after the user confirms, call delete_group_commit. Nothing is deleted.",
+      inputSchema: deleteGroupPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteGroupPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_group_commit",
+    {
+      description:
+        "STEP 2 — delete the group previewed by delete_group_plan. Requires the commitToken from that preview. Permanently removes a trading group server-wide via an AI assistant — only call after the user has reviewed the target and explicitly confirmed.",
+      inputSchema: deleteGroupCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteGroupCommit(restClient, params)),
+  );
+
   server.tool(
     "get_clients",
     "List all clients (account owners). Each client can own multiple trading accounts.",
     getClientsSchema.shape,
     toolHandler(() => getClients(restClient)),
+  );
+
+  server.tool(
+    "get_client",
+    "Get one client's full record by ID (type, status, person/company details). Use get_clients to find the ID.",
+    getClientSchema.shape,
+    toolHandler((params) => getClient(restClient, params)),
+  );
+  server.registerTool(
+    "update_client_plan",
+    {
+      description:
+        "STEP 1 of editing a client — preview WITHOUT writing. Reads the client (by clientId from get_clients), applies your partial `updates`, and returns a diff plus a commitToken. Show it; only after the user confirms, call update_client_commit.",
+      inputSchema: updateClientPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateClientPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_client_commit",
+    {
+      description:
+        "STEP 2 — apply the client edit previewed by update_client_plan. Requires its commitToken. Writes a LIVE change via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateClientCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateClientCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_client_plan",
+    {
+      description:
+        "STEP 1 of deleting a client — preview WITHOUT deleting. Reads the target (by clientId) and returns what will be removed plus a commitToken. Only after the user confirms, call delete_client_commit.",
+      inputSchema: deleteClientPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteClientPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_client_commit",
+    {
+      description:
+        "STEP 2 — delete the client previewed by delete_client_plan. Requires its commitToken. Permanently removes the client via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteClientCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteClientCommit(restClient, params)),
+  );
+
+  server.registerTool(
+    "update_account_plan",
+    {
+      description:
+        "STEP 1 of editing a trading account — preview WITHOUT writing. Reads the account (by accountId from get_all_accounts / get_account_info), applies your partial `updates` (e.g. leverage, enabled, allowTrading, groupId), and returns a diff plus a commitToken. Only after the user confirms, call update_account_commit.",
+      inputSchema: updateAccountPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateAccountPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_account_commit",
+    {
+      description:
+        "STEP 2 — apply the account edit previewed by update_account_plan. Requires its commitToken. Writes a LIVE change via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateAccountCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateAccountCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_account_plan",
+    {
+      description:
+        "STEP 1 of deleting a trading account — preview WITHOUT deleting. Reads the target (by accountId) and returns what will be removed plus a commitToken. Only after the user confirms, call delete_account_commit.",
+      inputSchema: deleteAccountPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteAccountPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_account_commit",
+    {
+      description:
+        "STEP 2 — delete the account previewed by delete_account_plan. Requires its commitToken. Permanently removes the trading account via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteAccountCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteAccountCommit(restClient, params)),
+  );
+
+  server.tool(
+    "get_liquidity_connector",
+    "Get one liquidity connector's full configuration by ID (type, priority, enabled, session parameters, symbols). Use get_liquidity_connectors to find the ID.",
+    getLiquidityConnectorSchema.shape,
+    toolHandler((params) => getLiquidityConnector(restClient, params)),
+  );
+  server.registerTool(
+    "update_liquidity_connector_plan",
+    {
+      description:
+        "STEP 1 of editing a liquidity connector (LP) — preview WITHOUT writing. Reads the connector (by connectorId from get_liquidity_connectors), applies your partial `updates` (e.g. isEnabled, priority, sessionParameters, symbols), and returns a diff plus a commitToken. Only after the user confirms, call update_liquidity_connector_commit.",
+      inputSchema: updateLiquidityConnectorPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateLiquidityConnectorPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_liquidity_connector_commit",
+    {
+      description:
+        "STEP 2 — apply the connector edit previewed by update_liquidity_connector_plan. Requires its commitToken. Writes a LIVE change via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateLiquidityConnectorCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateLiquidityConnectorCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_liquidity_connector_plan",
+    {
+      description:
+        "STEP 1 of deleting a liquidity connector — preview WITHOUT deleting. Reads the target (by connectorId) and returns what will be removed plus a commitToken. Only after the user confirms, call delete_liquidity_connector_commit.",
+      inputSchema: deleteLiquidityConnectorPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteLiquidityConnectorPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_liquidity_connector_commit",
+    {
+      description:
+        "STEP 2 — delete the connector previewed by delete_liquidity_connector_plan. Requires its commitToken. Permanently removes the liquidity connector via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteLiquidityConnectorCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteLiquidityConnectorCommit(restClient, params)),
+  );
+
+  server.registerTool(
+    "delete_symbol_plan",
+    {
+      description:
+        "STEP 1 of deleting a symbol — preview WITHOUT deleting. Reads the target (by symbolId from get_symbols) and returns what will be removed plus a commitToken. Only after the user confirms, call delete_symbol_commit.",
+      inputSchema: deleteSymbolPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteSymbolPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_symbol_commit",
+    {
+      description:
+        "STEP 2 — delete the symbol previewed by delete_symbol_plan. Requires its commitToken. Permanently removes the symbol server-wide via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteSymbolCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteSymbolCommit(restClient, params)),
+  );
+
+  server.tool(
+    "get_holidays",
+    "List all trading-calendar holidays (server-wide market closures / special hours). Each holiday has a date (year 0 = every year), enabled flag, symbol mask, and optional working hours.",
+    getHolidaysSchema.shape,
+    toolHandler(() => getHolidays(restClient)),
+  );
+  server.tool(
+    "get_holiday",
+    "Get one holiday's full record by ID. Use get_holidays to find the ID.",
+    getHolidaySchema.shape,
+    toolHandler((params) => getHoliday(restClient, params)),
+  );
+  server.registerTool(
+    "update_holiday_plan",
+    {
+      description:
+        "STEP 1 of editing a holiday (or creating one via edit) — preview WITHOUT writing. Reads the holiday (by holidayId from get_holidays), applies your partial `updates` (date, enabled, symbolMask, workingHours), and returns a diff plus a commitToken. Only after the user confirms, call update_holiday_commit.",
+      inputSchema: updateHolidayPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateHolidayPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_holiday_commit",
+    {
+      description:
+        "STEP 2 — apply the holiday edit previewed by update_holiday_plan. Requires its commitToken. Writes a LIVE change to the trading calendar via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateHolidayCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateHolidayCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_holiday_plan",
+    {
+      description:
+        "STEP 1 of deleting a holiday — preview WITHOUT deleting. Reads the target (by holidayId) and returns what will be removed plus a commitToken. Only after the user confirms, call delete_holiday_commit.",
+      inputSchema: deleteHolidayPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteHolidayPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_holiday_commit",
+    {
+      description:
+        "STEP 2 — delete the holiday previewed by delete_holiday_plan. Requires its commitToken. Permanently removes the calendar entry via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteHolidayCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteHolidayCommit(restClient, params)),
+  );
+
+  server.tool(
+    "get_managers",
+    "List all manager accounts and their permission flags (view/configure symbols, groups, holidays, cluster, etc.).",
+    getManagersSchema.shape,
+    toolHandler(() => getManagers(restClient)),
+  );
+  server.tool(
+    "get_manager",
+    "Get one manager's permissions by their account ID. Use get_managers to find the ID.",
+    getManagerSchema.shape,
+    toolHandler((params) => getManager(restClient, params)),
+  );
+  server.tool(
+    "get_manager_self",
+    "Get the currently signed-in manager's own account ID and permissions.",
+    getManagerSelfSchema.shape,
+    toolHandler(() => getManagerSelf(restClient)),
+  );
+  server.registerTool(
+    "update_manager_plan",
+    {
+      description:
+        "STEP 1 of editing a manager's permissions (or granting a new manager via edit) — preview WITHOUT writing. Reads the manager (by accountId from get_managers), applies your partial `updates` (permission flags), and returns a diff plus a commitToken. Only after the user confirms, call update_manager_commit.",
+      inputSchema: updateManagerPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateManagerPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_manager_commit",
+    {
+      description:
+        "STEP 2 — apply the manager-permission edit previewed by update_manager_plan. Requires its commitToken. Writes a LIVE permission change via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateManagerCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateManagerCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_manager_plan",
+    {
+      description:
+        "STEP 1 of revoking a manager (deleting their permissions) — preview WITHOUT deleting. Reads the target (by accountId) and returns what will be removed plus a commitToken. Only after the user confirms, call delete_manager_commit.",
+      inputSchema: deleteManagerPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteManagerPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_manager_commit",
+    {
+      description:
+        "STEP 2 — revoke the manager previewed by delete_manager_plan. Requires its commitToken. Permanently removes the manager's permissions via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteManagerCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteManagerCommit(restClient, params)),
+  );
+
+  server.tool(
+    "get_tokens",
+    "List issued API access tokens (metadata: which login, expiration, etc. — not the secret values).",
+    getTokensSchema.shape,
+    toolHandler(() => getTokens(restClient)),
+  );
+
+  server.registerTool(
+    "create_symbol_plan",
+    {
+      description:
+        "STEP 1 of creating a NEW symbol — preview WITHOUT writing. Clone an existing symbol as a template via `fromId` (recommended) and/or pass a full `object`, then set `overrides` (at least a unique name/path). id and version are forced to 0. Returns the object that will be created plus a commitToken. Only after the user confirms, call create_symbol_commit.",
+      inputSchema: createSymbolPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createSymbolPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_symbol_commit",
+    {
+      description:
+        "STEP 2 — create the symbol previewed by create_symbol_plan. Requires its commitToken. Adds a LIVE symbol server-wide via an AI assistant — only after explicit user confirmation.",
+      inputSchema: createSymbolCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createSymbolCommit(restClient, params)),
+  );
+  server.registerTool(
+    "create_group_plan",
+    {
+      description:
+        "STEP 1 of creating a NEW trading group — preview WITHOUT writing. Clone a template via `fromId` and/or pass a full `object`, then set `overrides` (name, currency, leverage, …). id/version forced to 0. Returns the object + a commitToken. Only after the user confirms, call create_group_commit.",
+      inputSchema: createGroupPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createGroupPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_group_commit",
+    {
+      description:
+        "STEP 2 — create the group previewed by create_group_plan. Requires its commitToken. Adds a LIVE group via an AI assistant — only after explicit user confirmation.",
+      inputSchema: createGroupCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createGroupCommit(restClient, params)),
+  );
+  server.registerTool(
+    "create_holiday_plan",
+    {
+      description:
+        "STEP 1 of creating a NEW holiday (trading-calendar entry) — preview WITHOUT writing. Pass a full `object` and/or clone via `fromId`, then `overrides` (description, year/month/day, symbolMask, enabled). id/version forced to 0. Returns the object + a commitToken. Only after the user confirms, call create_holiday_commit.",
+      inputSchema: createHolidayPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createHolidayPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_holiday_commit",
+    {
+      description:
+        "STEP 2 — create the holiday previewed by create_holiday_plan. Requires its commitToken. Adds a LIVE calendar entry via an AI assistant — only after explicit user confirmation.",
+      inputSchema: createHolidayCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createHolidayCommit(restClient, params)),
+  );
+  server.registerTool(
+    "create_client_plan",
+    {
+      description:
+        "STEP 1 of creating a NEW client (account owner) — preview WITHOUT writing. Clone via `fromId` and/or pass a full `object`, then `overrides` (clientType, status, person/company details). id/version forced to 0. Returns the object + a commitToken. Only after the user confirms, call create_client_commit.",
+      inputSchema: createClientPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createClientPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_client_commit",
+    {
+      description:
+        "STEP 2 — create the client previewed by create_client_plan. Requires its commitToken. Adds a LIVE client via an AI assistant — only after explicit user confirmation.",
+      inputSchema: createClientCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createClientCommit(restClient, params)),
+  );
+  server.registerTool(
+    "create_account_plan",
+    {
+      description:
+        "STEP 1 of creating a NEW trading account — preview WITHOUT writing. Clone via `fromId` and/or pass a full `object`, then `overrides` (groupId, clientId, leverage, enabled). A new account REQUIRES a `password` (supplied by the user in overrides/object). id/version forced to 0. Returns the object + a commitToken. Only after the user confirms, call create_account_commit.",
+      inputSchema: createAccountPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createAccountPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_account_commit",
+    {
+      description:
+        "STEP 2 — create the trading account previewed by create_account_plan. Requires its commitToken. Adds a LIVE trading account via an AI assistant — only after explicit user confirmation, and only when the user has supplied the account password.",
+      inputSchema: createAccountCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createAccountCommit(restClient, params)),
   );
 
   server.tool(
@@ -443,6 +952,27 @@ export function registerAdminTools(
     "Get complete symbol configuration by ID: trading sessions, swap rates, margin requirements, tick size, lot size, and all parameters. Use get_symbols to find the symbol ID first.",
     getSymbolDetailsSchema.shape,
     toolHandler((params) => getSymbolDetails(restClient, params)),
+  );
+
+  server.registerTool(
+    "update_symbol_plan",
+    {
+      description:
+        "STEP 1 of editing a symbol's server-wide configuration — preview WITHOUT writing. Reads the current symbol (by symbolId from get_symbols), applies your partial changes (any top-level fields via `updates`, and/or full `quoteSessions`/`tradeSessions` replacement lists), and returns a field-by-field diff plus a commitToken. Show the diff; only after the user confirms, call update_symbol_commit. Nothing is written.",
+      inputSchema: updateSymbolPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateSymbolPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_symbol_commit",
+    {
+      description:
+        "STEP 2 — apply the symbol edit previewed by update_symbol_plan. Requires the commitToken from that preview. Writes a LIVE, server-wide change to the symbol via an AI assistant — only call after the user has reviewed the diff and explicitly confirmed.",
+      inputSchema: updateSymbolCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateSymbolCommit(restClient, params)),
   );
 
   server.tool(

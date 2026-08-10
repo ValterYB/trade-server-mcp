@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-43-tools)** — 43 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-89-tools)** — 89 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -606,7 +606,7 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (43 tools)
+## Admin mode (89 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
@@ -1268,7 +1268,7 @@ Example:
 }
 ```
 
-### Configuration (9 tools)
+### Configuration (55 tools)
 
 #### `get_groups`
 
@@ -1406,6 +1406,88 @@ Example:
 ```json
 {
   "symbolId": 42
+}
+```
+
+#### `update_symbol_plan`
+
+> STEP 1 of editing a symbol's server-wide configuration — preview WITHOUT writing. Reads the current symbol (by symbolId from get_symbols), applies your partial changes (any top-level fields via `updates`, and/or full `quoteSessions`/`tradeSessions` replacement lists), and returns a field-by-field diff plus a commitToken. Show the diff; only after the user confirms, call update_symbol_commit. Nothing is written.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `symbolId` | number | Yes | ID of the symbol to modify (from get_symbols) |
+| `updates` | object | No | Partial map of top-level symbol fields to overwrite, using the exact field names get_symbols returns (e.g. `{ "bidMarkup": 5, "maxOrderSize": 50 }`). For sessions use quoteSessions/tradeSessions instead. |
+| `quoteSessions` | array of `{weekDay,start,end}` | No | Full replacement list of quote sessions (repeat a weekday for intraday breaks). Omit to leave unchanged. |
+| `tradeSessions` | array of `{weekDay,start,end}` | No | Full replacement list of trade sessions. Omit to leave unchanged. |
+
+Example:
+
+```json
+{
+  "symbolId": 70,
+  "tradeSessions": [
+    { "weekDay": "Mon", "start": "01:05:00", "end": "23:50:00" },
+    { "weekDay": "Fri", "start": "01:05:00", "end": "23:50:00" }
+  ]
+}
+```
+
+#### `update_symbol_commit`
+
+> STEP 2 — apply the symbol edit previewed by update_symbol_plan. Requires the commitToken from that preview. Writes a LIVE, server-wide change to the symbol via an AI assistant — only call after the user has reviewed the diff and explicitly confirmed.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `commitToken` | string | Yes | The commitToken returned by update_symbol_plan |
+
+Example:
+
+```json
+{
+  "commitToken": "plan_6eee4ff4-9cdc-4780-9b66-977cb0084b53"
+}
+```
+
+#### Resource CRUD (create / edit / delete) — the shared pattern
+
+All admin config resources below expose **create / edit / delete** through the same
+confirm-before-write **plan → commit** pairs as `update_symbol_*`:
+
+- **`update_<res>_plan`** reads the current object (by id), applies your partial `updates`, and
+  returns a field-by-field diff plus a `commitToken`. **`update_<res>_commit`** applies it via
+  `POST /admin/<res>/edit`, sending the resource's ETag as `If-Match` (optimistic concurrency).
+- **`delete_<res>_plan`** previews the target; **`delete_<res>_commit`** posts
+  `{ <res>Id, version }` to `/admin/<res>/delete` with `If-Match`.
+- **`create_<res>_plan`** builds a new object — clone an existing one as a template via `fromId`
+  (recommended) and/or pass a full `object`, then apply `overrides`; `id`/`version` are forced to
+  `0`. **`create_<res>_commit`** posts it to `/admin/<res>/edit` (no `If-Match`).
+
+Every `*_plan` returns a `commitToken`; every `*_commit` takes only `{ commitToken }`. Nothing is
+written until you commit. Field names in `updates`/`overrides` are exactly those the matching
+`get_*` returns.
+
+| Resource | Read | Create | Edit | Delete |
+|---|---|---|---|---|
+| **Symbols** | `get_symbols`, `get_symbol_details` | `create_symbol_plan/commit` | `update_symbol_plan/commit` | `delete_symbol_plan/commit` |
+| **Groups** | `get_groups`, `get_group` | `create_group_plan/commit` | `update_group_plan/commit` | `delete_group_plan/commit` |
+| **Trading accounts** | `get_all_accounts`, `get_account_info` | `create_account_plan/commit` ¹ | `update_account_plan/commit` | `delete_account_plan/commit` |
+| **Clients** | `get_clients`, `get_client` | `create_client_plan/commit` | `update_client_plan/commit` | `delete_client_plan/commit` |
+| **Liquidity connectors** | `get_liquidity_connectors`, `get_liquidity_connector` | — | `update_liquidity_connector_plan/commit` | `delete_liquidity_connector_plan/commit` |
+| **Holidays** (trading calendar) | `get_holidays`, `get_holiday` | `create_holiday_plan/commit` | `update_holiday_plan/commit` | `delete_holiday_plan/commit` |
+| **Managers** | `get_managers`, `get_manager`, `get_manager_self` | via `update_manager` (id 0) | `update_manager_plan/commit` | `delete_manager_plan/commit` |
+| **Access tokens** | `get_tokens` | — | — | — |
+
+¹ A new trading account **requires a `password`** in `overrides`/`object` (supplied by you).
+
+**Plan parameters** — edit: `{ <res>Id, updates }`; delete: `{ <res>Id }`; create:
+`{ fromId?, object?, overrides? }`. **Commit parameters** — `{ commitToken }`.
+
+Example — clone `EURUSD` (id 1) into a new `EURGBP`:
+
+```json
+{
+  "fromId": 1,
+  "overrides": { "name": "EURGBP", "path": "Forex/EURGBP", "description": "Euro vs Pound" }
 }
 ```
 

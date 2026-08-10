@@ -37,6 +37,10 @@ export class ClientAuth implements CredentialsProvider {
   private inflight: Promise<void> | null = null;
   private lastAuthFailure: AuthRequestError | null = null;
 
+  // Backoff bounds for re-arming renewal after a failed cycle (30s → capped at 5m).
+  private static readonly RETRY_MIN_MS = 30_000;
+  private static readonly RETRY_MAX_MS = 300_000;
+
   constructor(
     private baseUrl: string,
     private opts: ClientLoginOptions,
@@ -142,16 +146,30 @@ export class ClientAuth implements CredentialsProvider {
     this.stop();
     const msLeft = this.expiration / 1000 - Date.now();
     const delay = Math.min(Math.max(msLeft * 0.8, 5_000), 2 ** 31 - 1);
+    this.armRenew(delay, ClientAuth.RETRY_MIN_MS);
+  }
+
+  /**
+   * Arm the renewal timer. When it fires, rotate the session (refresh, falling back to a full
+   * authorize). A SUCCESS re-arms the normal 80%-of-lifetime cycle via store(). A TOTAL failure
+   * re-arms THIS timer with exponential backoff (capped) instead of giving up — previously a
+   * single transient failure at refresh time silently killed the session forever, after which
+   * every request failed (as 502, not 401, on this server) until the process was restarted.
+   */
+  private armRenew(delayMs: number, retryMs: number) {
     this.timer = setTimeout(() => {
-      this.refresh().catch(() => {
+      this.refresh().catch(() =>
         this.authorize().catch((err) => {
           console.error(
-            "Trade Server MCP: re-authorization failed:",
-            err instanceof Error ? err.message : String(err),
+            `Trade Server MCP: re-authorization failed: ${
+              err instanceof Error ? err.message : String(err)
+            } — retrying in ${Math.round(retryMs / 1000)}s`,
           );
-        });
-      });
-    }, delay);
+          this.stop();
+          this.armRenew(retryMs, Math.min(retryMs * 2, ClientAuth.RETRY_MAX_MS));
+        }),
+      );
+    }, delayMs);
     if (typeof (this.timer as any).unref === "function") (this.timer as any).unref();
   }
 

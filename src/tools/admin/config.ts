@@ -1,5 +1,15 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
+import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
+import {
+  ResourceSpec,
+  planResourceEdit,
+  planResourceDelete,
+  planResourceCreate,
+  commitResourceWrite,
+  readFresh,
+  stripServerManaged,
+} from "./resource-write.js";
 
 export const getGroupsSchema = z.object({});
 
@@ -134,6 +144,566 @@ export async function getSymbolDetails(
 ) {
   return client.get(`/admin/symbols/get/${params.symbolId}`);
 }
+
+// === SYMBOL EDIT (plan/commit) ===
+//
+// The Trade Server admin API exposes symbol writes as a single upsert endpoint,
+// POST /admin/symbols/edit, which takes the FULL symbol object (same verbose shape
+// get_symbols returns) and uses the object's `version` for optimistic concurrency.
+// We therefore read-modify-write: GET the current symbol, apply a partial overlay,
+// and POST the merged object back — preserving id/version and every untouched field.
+// Confirmed against yourbourse/trade-server-samples and the admin UI SDK.
+
+const symbolSessionSchema = z.object({
+  weekDay: z.enum(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]).describe("Day of week"),
+  start: z.string().describe('Session start as "HH:MM:SS" in server time'),
+  end: z.string().describe('Session end as "HH:MM:SS" in server time'),
+});
+
+export const updateSymbolPlanSchema = z.object({
+  symbolId: z.number().describe("ID of the symbol to modify (from get_symbols)"),
+  updates: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      "Partial map of top-level symbol fields to overwrite, using the exact field names get_symbols returns (e.g. { bidMarkup: 5, maxOrderSize: 50 }). For sessions use quoteSessions/tradeSessions instead.",
+    ),
+  quoteSessions: z
+    .array(symbolSessionSchema)
+    .optional()
+    .describe(
+      "Full replacement list of quote sessions (one entry per interval; repeat a weekday for intraday breaks). Omit to leave unchanged.",
+    ),
+  tradeSessions: z
+    .array(symbolSessionSchema)
+    .optional()
+    .describe("Full replacement list of trade sessions. Omit to leave unchanged."),
+});
+
+const UPDATE_SYMBOL_DISCLOSURE =
+  "You are confirming a LIVE change to a symbol's server-wide configuration via an AI assistant. Review the diff, then call update_symbol_commit with this commitToken to apply it. Nothing is written until you commit.";
+
+type SymbolRecord = Record<string, unknown>;
+
+// Deep-equal by canonical JSON — sufficient for the plain data (numbers, strings, session
+// arrays) a symbol config is built from.
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export async function updateSymbolPlan(
+  client: RestClient,
+  params: z.infer<typeof updateSymbolPlanSchema>,
+) {
+  const current = await readFresh(client, `/admin/symbols/get/${params.symbolId}`);
+
+  const overlay: SymbolRecord = { ...(params.updates ?? {}) };
+  if (params.quoteSessions !== undefined) overlay.quoteSessions = params.quoteSessions;
+  if (params.tradeSessions !== undefined) overlay.tradeSessions = params.tradeSessions;
+
+  // Full object to write: current config with the overlay applied. Preserves id/version and
+  // every field the caller did not touch, so the edit is a genuine partial update.
+  const next: SymbolRecord = { ...current, ...overlay };
+
+  // Diff only the keys the caller tried to change, so the preview is exactly what will move.
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  for (const key of Object.keys(overlay)) {
+    if (!sameValue(current[key], next[key])) {
+      changes[key] = { from: current[key], to: next[key] };
+    }
+  }
+
+  if (Object.keys(changes).length === 0) {
+    return {
+      symbol: current.name,
+      noChanges: true,
+      message:
+        "The requested values already match the symbol's current configuration; nothing to apply.",
+    };
+  }
+
+  // The edit endpoint uses ETag/If-Match optimistic concurrency (the ETag is the resource
+  // version, e.g. "1"). RestClient cached it under the GET path during the read above; capture
+  // it now and stash it with the plan so the commit can send it as If-Match. Stashing (rather
+  // than re-reading at commit) preserves concurrency: if someone else edits between plan and
+  // commit, the stale If-Match no longer matches and the commit fails loudly instead of
+  // clobbering.
+  const etag = client.getEtag(`/admin/symbols/get/${params.symbolId}`);
+
+  const commitToken = issuePlan({ symbol: stripServerManaged(next), etag }, "update_symbol");
+  return {
+    symbol: current.name,
+    symbolId: params.symbolId,
+    version: current.version,
+    changes,
+    commitToken,
+    disclosure: UPDATE_SYMBOL_DISCLOSURE,
+  };
+}
+
+export const updateSymbolCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by update_symbol_plan"),
+});
+
+export async function updateSymbolCommit(
+  client: RestClient,
+  params: z.infer<typeof updateSymbolCommitSchema>,
+) {
+  // The merged full object was validated and stashed by the plan; single-use token consumption
+  // (takeCommit) makes a retried commit unable to re-apply a stale edit.
+  const { symbol, etag } = takeCommit(params.commitToken, "update_symbol") as {
+    symbol: SymbolRecord;
+    etag?: string;
+  };
+  // Carry the symbol's ETag onto the edit path so RestClient sends If-Match — the edit endpoint
+  // requires it for optimistic concurrency and rejects the write (PRECONDITION_FAILED) without it.
+  if (etag) client.setEtag("/admin/symbols/edit", etag);
+  return client.post("/admin/symbols/edit", symbol);
+}
+
+// === GROUP EDIT / DELETE (plan/commit) ===
+//
+// Groups use the same admin write contract as symbols: POST /admin/groups/edit is an upsert
+// (id/version 0 = create) guarded by If-Match (ETag == the group version), and
+// POST /admin/groups/delete takes { groupId, version } and also requires If-Match. Both bridge
+// the ETag captured from the GET onto the write path (RestClient keys ETags by path).
+
+type AdminRecord = Record<string, unknown>;
+
+export const updateGroupPlanSchema = z.object({
+  groupId: z.number().describe("ID of the group to modify (from get_groups)"),
+  updates: z
+    .record(z.unknown())
+    .describe(
+      "Map of top-level group fields to overwrite, using the exact field names get_groups returns (e.g. { defaultLeverage: 200, marginCall: 80, stopout: 50 }).",
+    ),
+});
+
+const UPDATE_GROUP_DISCLOSURE =
+  "You are confirming a LIVE change to a trading group's server-wide configuration via an AI assistant. Review the diff, then call update_group_commit with this commitToken to apply it. Nothing is written until you commit.";
+
+export async function updateGroupPlan(
+  client: RestClient,
+  params: z.infer<typeof updateGroupPlanSchema>,
+) {
+  const current = await readFresh(client, `/admin/groups/get/${params.groupId}`);
+  const next: AdminRecord = { ...current, ...params.updates };
+
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  for (const key of Object.keys(params.updates)) {
+    if (!sameValue(current[key], next[key])) changes[key] = { from: current[key], to: next[key] };
+  }
+  if (Object.keys(changes).length === 0) {
+    return {
+      group: current.name,
+      noChanges: true,
+      message: "The requested values already match the group's current configuration.",
+    };
+  }
+
+  const etag = client.getEtag(`/admin/groups/get/${params.groupId}`);
+  const commitToken = issuePlan({ object: stripServerManaged(next), etag }, "update_group");
+  return {
+    group: current.name,
+    groupId: params.groupId,
+    version: current.version,
+    changes,
+    commitToken,
+    disclosure: UPDATE_GROUP_DISCLOSURE,
+  };
+}
+
+export const updateGroupCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by update_group_plan"),
+});
+
+export async function updateGroupCommit(
+  client: RestClient,
+  params: z.infer<typeof updateGroupCommitSchema>,
+) {
+  const { object, etag } = takeCommit(params.commitToken, "update_group") as {
+    object: AdminRecord;
+    etag?: string;
+  };
+  if (etag) client.setEtag("/admin/groups/edit", etag);
+  return client.post("/admin/groups/edit", object);
+}
+
+export const deleteGroupPlanSchema = z.object({
+  groupId: z.number().describe("ID of the group to delete (from get_groups)"),
+});
+
+const DELETE_GROUP_DISCLOSURE =
+  "You are confirming the LIVE DELETION of a trading group via an AI assistant. Review the target, then call delete_group_commit with this commitToken to delete it. Nothing is deleted until you commit.";
+
+export async function deleteGroupPlan(
+  client: RestClient,
+  params: z.infer<typeof deleteGroupPlanSchema>,
+) {
+  const current = await readFresh(client, `/admin/groups/get/${params.groupId}`);
+  const etag = client.getEtag(`/admin/groups/get/${params.groupId}`);
+  const body = { groupId: params.groupId, version: current.version };
+  const commitToken = issuePlan({ body, etag }, "delete_group");
+  return {
+    willDelete: { groupId: params.groupId, name: current.name, version: current.version },
+    commitToken,
+    disclosure: DELETE_GROUP_DISCLOSURE,
+  };
+}
+
+export const deleteGroupCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by delete_group_plan"),
+});
+
+export async function deleteGroupCommit(
+  client: RestClient,
+  params: z.infer<typeof deleteGroupCommitSchema>,
+) {
+  const { body, etag } = takeCommit(params.commitToken, "delete_group") as {
+    body: AdminRecord;
+    etag?: string;
+  };
+  if (etag) client.setEtag("/admin/groups/delete", etag);
+  return client.post("/admin/groups/delete", body);
+}
+
+// === RESOURCE CRUD (accounts, clients, liquidity connectors, symbol delete) ===
+// Thin, task-shaped wrappers over the shared read-modify-write / delete helpers in
+// resource-write.ts. Each pair mirrors the symbol/group tools: *_plan previews (read + diff),
+// *_commit applies with If-Match. Tool names/descriptions are hand-written in register-admin.ts.
+
+const commitTokenSchema = (planTool: string) =>
+  z.object({ commitToken: z.string().describe(`The commitToken returned by ${planTool}`) });
+
+// --- Trading accounts ---
+const ACCOUNT_SPEC: ResourceSpec = {
+  label: "trading account",
+  getPath: (id) => `/admin/accounts/get/${id}`,
+  editPath: "/admin/accounts/edit",
+  deletePath: "/admin/accounts/delete",
+  idKey: "accountId",
+};
+export const updateAccountPlanSchema = z.object({
+  accountId: z.number().describe("Trading account ID (login), from get_all_accounts"),
+  updates: z
+    .record(z.unknown())
+    .describe(
+      "Map of top-level account fields to overwrite, using the exact field names get_account_info returns (e.g. { leverage: 200, enabled: true, allowTrading: false, groupId: 2 }).",
+    ),
+});
+export const updateAccountPlan = (client: RestClient, p: z.infer<typeof updateAccountPlanSchema>) =>
+  planResourceEdit(client, ACCOUNT_SPEC, p.accountId, p.updates, "update_account");
+export const updateAccountCommitSchema = commitTokenSchema("update_account_plan");
+export const updateAccountCommit = (
+  client: RestClient,
+  p: z.infer<typeof updateAccountCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "update_account");
+export const deleteAccountPlanSchema = z.object({
+  accountId: z.number().describe("Trading account ID to delete (from get_all_accounts)"),
+});
+export const deleteAccountPlan = (client: RestClient, p: z.infer<typeof deleteAccountPlanSchema>) =>
+  planResourceDelete(client, ACCOUNT_SPEC, p.accountId, "delete_account");
+export const deleteAccountCommitSchema = commitTokenSchema("delete_account_plan");
+export const deleteAccountCommit = (
+  client: RestClient,
+  p: z.infer<typeof deleteAccountCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "delete_account");
+
+// --- Clients ---
+const CLIENT_SPEC: ResourceSpec = {
+  label: "client",
+  getPath: (id) => `/admin/clients/get/${id}`,
+  editPath: "/admin/clients/edit",
+  deletePath: "/admin/clients/delete",
+  idKey: "clientId",
+};
+export const getClientSchema = z.object({
+  clientId: z.number().describe("Client unique identifier (from get_clients)"),
+});
+export const getClient = (client: RestClient, p: z.infer<typeof getClientSchema>) =>
+  client.get(`/admin/clients/get/${p.clientId}`);
+export const updateClientPlanSchema = z.object({
+  clientId: z.number().describe("Client ID, from get_clients"),
+  updates: z
+    .record(z.unknown())
+    .describe(
+      "Map of top-level client fields to overwrite, using the exact field names get_clients returns (e.g. { clientStatus: 'Active', personFirstName: 'Jane' }).",
+    ),
+});
+export const updateClientPlan = (client: RestClient, p: z.infer<typeof updateClientPlanSchema>) =>
+  planResourceEdit(client, CLIENT_SPEC, p.clientId, p.updates, "update_client");
+export const updateClientCommitSchema = commitTokenSchema("update_client_plan");
+export const updateClientCommit = (
+  client: RestClient,
+  p: z.infer<typeof updateClientCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "update_client");
+export const deleteClientPlanSchema = z.object({
+  clientId: z.number().describe("Client ID to delete (from get_clients)"),
+});
+export const deleteClientPlan = (client: RestClient, p: z.infer<typeof deleteClientPlanSchema>) =>
+  planResourceDelete(client, CLIENT_SPEC, p.clientId, "delete_client");
+export const deleteClientCommitSchema = commitTokenSchema("delete_client_plan");
+export const deleteClientCommit = (
+  client: RestClient,
+  p: z.infer<typeof deleteClientCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "delete_client");
+
+// --- Liquidity connectors ---
+const CONNECTOR_SPEC: ResourceSpec = {
+  label: "liquidity connector",
+  getPath: (id) => `/admin/liquidity/get/${id}`,
+  editPath: "/admin/liquidity/edit",
+  deletePath: "/admin/liquidity/delete",
+  idKey: "connectorId",
+};
+export const getLiquidityConnectorSchema = z.object({
+  connectorId: z.number().describe("Liquidity connector ID (from get_liquidity_connectors)"),
+});
+export const getLiquidityConnector = (
+  client: RestClient,
+  p: z.infer<typeof getLiquidityConnectorSchema>,
+) => client.get(`/admin/liquidity/get/${p.connectorId}`);
+export const updateLiquidityConnectorPlanSchema = z.object({
+  connectorId: z.number().describe("Liquidity connector ID, from get_liquidity_connectors"),
+  updates: z
+    .record(z.unknown())
+    .describe(
+      "Map of top-level connector fields to overwrite, using the exact field names get_liquidity_connectors returns (e.g. { isEnabled: false, priority: 2 }). sessionParameters/symbols are arrays — pass the whole replacement array to change them.",
+    ),
+});
+export const updateLiquidityConnectorPlan = (
+  client: RestClient,
+  p: z.infer<typeof updateLiquidityConnectorPlanSchema>,
+) =>
+  planResourceEdit(client, CONNECTOR_SPEC, p.connectorId, p.updates, "update_liquidity_connector");
+export const updateLiquidityConnectorCommitSchema = commitTokenSchema(
+  "update_liquidity_connector_plan",
+);
+export const updateLiquidityConnectorCommit = (
+  client: RestClient,
+  p: z.infer<typeof updateLiquidityConnectorCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "update_liquidity_connector");
+export const deleteLiquidityConnectorPlanSchema = z.object({
+  connectorId: z
+    .number()
+    .describe("Liquidity connector ID to delete (from get_liquidity_connectors)"),
+});
+export const deleteLiquidityConnectorPlan = (
+  client: RestClient,
+  p: z.infer<typeof deleteLiquidityConnectorPlanSchema>,
+) => planResourceDelete(client, CONNECTOR_SPEC, p.connectorId, "delete_liquidity_connector");
+export const deleteLiquidityConnectorCommitSchema = commitTokenSchema(
+  "delete_liquidity_connector_plan",
+);
+export const deleteLiquidityConnectorCommit = (
+  client: RestClient,
+  p: z.infer<typeof deleteLiquidityConnectorCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "delete_liquidity_connector");
+
+// --- Symbol delete (symbol edit lives in the SYMBOL EDIT section above) ---
+const SYMBOL_SPEC: ResourceSpec = {
+  label: "symbol",
+  getPath: (id) => `/admin/symbols/get/${id}`,
+  editPath: "/admin/symbols/edit",
+  deletePath: "/admin/symbols/delete",
+  idKey: "symbolId",
+  nameKey: "name",
+};
+export const deleteSymbolPlanSchema = z.object({
+  symbolId: z.number().describe("Symbol ID to delete (from get_symbols)"),
+});
+export const deleteSymbolPlan = (client: RestClient, p: z.infer<typeof deleteSymbolPlanSchema>) =>
+  planResourceDelete(client, SYMBOL_SPEC, p.symbolId, "delete_symbol");
+export const deleteSymbolCommitSchema = commitTokenSchema("delete_symbol_plan");
+export const deleteSymbolCommit = (
+  client: RestClient,
+  p: z.infer<typeof deleteSymbolCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "delete_symbol");
+
+// === TIER 2: holidays (trading calendar), managers, tokens ===
+
+// --- Holidays ---
+export const getHolidaysSchema = z.object({});
+export const getHolidays = (client: RestClient) => client.post("/admin/holidays/query", {});
+export const getHolidaySchema = z.object({
+  holidayId: z.number().describe("Holiday unique identifier (from get_holidays)"),
+});
+export const getHoliday = (client: RestClient, p: z.infer<typeof getHolidaySchema>) =>
+  client.get(`/admin/holidays/get/${p.holidayId}`);
+const HOLIDAY_SPEC: ResourceSpec = {
+  label: "holiday",
+  getPath: (id) => `/admin/holidays/get/${id}`,
+  editPath: "/admin/holidays/edit",
+  deletePath: "/admin/holidays/delete",
+  idKey: "holidayId",
+  nameKey: "description",
+};
+export const updateHolidayPlanSchema = z.object({
+  holidayId: z.number().describe("Holiday ID, from get_holidays"),
+  updates: z
+    .record(z.unknown())
+    .describe(
+      "Map of top-level holiday fields to overwrite, using the exact field names get_holidays returns (e.g. { enabled: false, year: 2027, month: 12, day: 25, symbolMask: '*' }).",
+    ),
+});
+export const updateHolidayPlan = (client: RestClient, p: z.infer<typeof updateHolidayPlanSchema>) =>
+  planResourceEdit(client, HOLIDAY_SPEC, p.holidayId, p.updates, "update_holiday");
+export const updateHolidayCommitSchema = commitTokenSchema("update_holiday_plan");
+export const updateHolidayCommit = (
+  client: RestClient,
+  p: z.infer<typeof updateHolidayCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "update_holiday");
+export const deleteHolidayPlanSchema = z.object({
+  holidayId: z.number().describe("Holiday ID to delete (from get_holidays)"),
+});
+export const deleteHolidayPlan = (client: RestClient, p: z.infer<typeof deleteHolidayPlanSchema>) =>
+  planResourceDelete(client, HOLIDAY_SPEC, p.holidayId, "delete_holiday");
+export const deleteHolidayCommitSchema = commitTokenSchema("delete_holiday_plan");
+export const deleteHolidayCommit = (
+  client: RestClient,
+  p: z.infer<typeof deleteHolidayCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "delete_holiday");
+
+// --- Managers (manager-account permissions) ---
+export const getManagersSchema = z.object({});
+export const getManagers = (client: RestClient) => client.get("/admin/managers/query");
+export const getManagerSchema = z.object({
+  accountId: z.number().describe("Manager's trading account ID (from get_managers)"),
+});
+export const getManager = (client: RestClient, p: z.infer<typeof getManagerSchema>) =>
+  client.get(`/admin/managers/get/${p.accountId}`);
+export const getManagerSelfSchema = z.object({});
+export const getManagerSelf = (client: RestClient) => client.get("/admin/managers/self");
+const MANAGER_SPEC: ResourceSpec = {
+  label: "manager",
+  getPath: (id) => `/admin/managers/get/${id}`,
+  editPath: "/admin/managers/edit",
+  deletePath: "/admin/managers/delete",
+  idKey: "accountId",
+};
+export const updateManagerPlanSchema = z.object({
+  accountId: z.number().describe("Manager's account ID, from get_managers"),
+  updates: z
+    .record(z.unknown())
+    .describe(
+      "Map of top-level manager permission fields to overwrite, using the exact field names get_managers returns (e.g. { configureSymbols: true, viewGroups: true, configureHolidays: false }).",
+    ),
+});
+export const updateManagerPlan = (client: RestClient, p: z.infer<typeof updateManagerPlanSchema>) =>
+  planResourceEdit(client, MANAGER_SPEC, p.accountId, p.updates, "update_manager");
+export const updateManagerCommitSchema = commitTokenSchema("update_manager_plan");
+export const updateManagerCommit = (
+  client: RestClient,
+  p: z.infer<typeof updateManagerCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "update_manager");
+export const deleteManagerPlanSchema = z.object({
+  accountId: z.number().describe("Manager's account ID to delete (from get_managers)"),
+});
+export const deleteManagerPlan = (client: RestClient, p: z.infer<typeof deleteManagerPlanSchema>) =>
+  planResourceDelete(client, MANAGER_SPEC, p.accountId, "delete_manager");
+export const deleteManagerCommitSchema = commitTokenSchema("delete_manager_plan");
+export const deleteManagerCommit = (
+  client: RestClient,
+  p: z.infer<typeof deleteManagerCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "delete_manager");
+
+// --- Access tokens (read) ---
+export const getTokensSchema = z.object({});
+export const getTokens = (client: RestClient) => client.post("/admin/tokens/query", {});
+
+// === CREATE flows (clone-a-template + overrides, or a full object; id/version forced to 0) ===
+
+const GROUP_SPEC: ResourceSpec = {
+  label: "group",
+  getPath: (id) => `/admin/groups/get/${id}`,
+  editPath: "/admin/groups/edit",
+  deletePath: "/admin/groups/delete",
+  idKey: "groupId",
+  nameKey: "name",
+};
+
+const makeCreateSchema = (label: string, exampleOverrides: string) =>
+  z.object({
+    fromId: z
+      .number()
+      .optional()
+      .describe(
+        `Existing ${label} ID to clone as a template (recommended) — its full config is copied, then your overrides applied.`,
+      ),
+    object: z
+      .record(z.unknown())
+      .optional()
+      .describe(
+        `Full new ${label} object (alternative to fromId). id and version are forced to 0.`,
+      ),
+    overrides: z
+      .record(z.unknown())
+      .optional()
+      .describe(`Fields to set on the new ${label}, e.g. ${exampleOverrides}.`),
+  });
+
+// Symbol
+export const createSymbolPlanSchema = makeCreateSchema(
+  "symbol",
+  "{ name: 'EURGBP', path: 'Forex/EURGBP', description: 'Euro vs Pound' }",
+);
+export const createSymbolPlan = (client: RestClient, p: z.infer<typeof createSymbolPlanSchema>) =>
+  planResourceCreate(client, SYMBOL_SPEC, p, "create_symbol");
+export const createSymbolCommitSchema = commitTokenSchema("create_symbol_plan");
+export const createSymbolCommit = (
+  client: RestClient,
+  p: z.infer<typeof createSymbolCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "create_symbol");
+
+// Group
+export const createGroupPlanSchema = makeCreateSchema(
+  "group",
+  "{ name: 'Real/EUR-Standard', currency: 'EUR', defaultLeverage: 100 }",
+);
+export const createGroupPlan = (client: RestClient, p: z.infer<typeof createGroupPlanSchema>) =>
+  planResourceCreate(client, GROUP_SPEC, p, "create_group");
+export const createGroupCommitSchema = commitTokenSchema("create_group_plan");
+export const createGroupCommit = (client: RestClient, p: z.infer<typeof createGroupCommitSchema>) =>
+  commitResourceWrite(client, p.commitToken, "create_group");
+
+// Holiday
+export const createHolidayPlanSchema = makeCreateSchema(
+  "holiday",
+  "{ description: 'Christmas', year: 0, month: 12, day: 25, enabled: true, symbolMask: '*' }",
+);
+export const createHolidayPlan = (client: RestClient, p: z.infer<typeof createHolidayPlanSchema>) =>
+  planResourceCreate(client, HOLIDAY_SPEC, p, "create_holiday");
+export const createHolidayCommitSchema = commitTokenSchema("create_holiday_plan");
+export const createHolidayCommit = (
+  client: RestClient,
+  p: z.infer<typeof createHolidayCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "create_holiday");
+
+// Client
+export const createClientPlanSchema = makeCreateSchema(
+  "client",
+  "{ clientType: 'Individual', clientStatus: 'Active', personFirstName: 'Jane', personLastName: 'Doe' }",
+);
+export const createClientPlan = (client: RestClient, p: z.infer<typeof createClientPlanSchema>) =>
+  planResourceCreate(client, CLIENT_SPEC, p, "create_client");
+export const createClientCommitSchema = commitTokenSchema("create_client_plan");
+export const createClientCommit = (
+  client: RestClient,
+  p: z.infer<typeof createClientCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "create_client");
+
+// Trading account (NOTE: a new account requires `password` in overrides/object)
+export const createAccountPlanSchema = makeCreateSchema(
+  "trading account",
+  "{ groupId: 2, clientId: 2, leverage: 100, enabled: true, password: '<initial-password>' } — a new account REQUIRES a password",
+);
+export const createAccountPlan = (client: RestClient, p: z.infer<typeof createAccountPlanSchema>) =>
+  planResourceCreate(client, ACCOUNT_SPEC, p, "create_account");
+export const createAccountCommitSchema = commitTokenSchema("create_account_plan");
+export const createAccountCommit = (
+  client: RestClient,
+  p: z.infer<typeof createAccountCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "create_account");
 
 export const healthCheckSchema = z.object({});
 

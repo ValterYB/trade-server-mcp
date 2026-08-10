@@ -22,7 +22,7 @@ design decisions behind it all.
                                   v                                             v
                        +--------------------+                       +---------------------+
                        | register-admin.ts  |                       | register-client.ts  |
-                       | 43 tools           |                       | 30 tools            |
+                       | 89 tools           |                       | 30 tools            |
                        | 4 resources        |                       | 1 resource          |
                        +---------+----------+                       +----------+----------+
                                  |                                             |
@@ -66,7 +66,7 @@ Everything under `src/`:
 |---|---|
 | `index.ts` | Entry point: parse env config, construct the auth provider and clients for the selected mode, register tools, connect the stdio transport, log the startup line. |
 | `config.ts` | Environment-variable parsing: mode selection and inference, whitespace trimming, validation, and every startup error message. |
-| `register-admin.ts` | Registers the 43 admin tools and 4 MCP resources, wiring each tool name + description + schema to its implementation. |
+| `register-admin.ts` | Registers the 89 admin tools and 4 MCP resources, wiring each tool name + description + schema to its implementation. |
 | `register-client.ts` | Registers the 30 client tools and 1 MCP resource; exports `CLIENT_TOOL_COUNT`; wraps every tool so sign-in failure hints surface in tool errors. |
 | `tool-handler.ts` | Wraps each tool function for MCP: serializes results to JSON text, converts thrown errors into a structured `{ error, message }` result with `isError: true`. |
 | `rest-client.ts` | Signed REST client for `/api/v1`: header construction, HMAC signing, ETag caching (`If-None-Match` / `If-Match`), semantic error mapping (`ApiError`), 401 renew-and-retry (`withAuthRetry`), and the transport retry policy. |
@@ -77,7 +77,8 @@ Everything under `src/`:
 | `tools/admin/trading.ts` | Admin trading tools: order placement/modification/cancel, positions, close composites, history, account summary. The four money-movers (place order, close position, close-by, close all) are exposed as `*_plan` + `*_commit` pairs (confirm-before-execute). |
 | `tools/admin/account.ts` | Admin account tools: account state/info, all accounts, cash transfers, transfer history, balances. |
 | `tools/admin/market-data.ts` | Admin market data: WS quotes and depth, symbols, candles, conversion rate, locally computed indicators, health check. |
-| `tools/admin/config.ts` | Admin configuration tools: groups, clients, order routing (get/set/add/remove), liquidity connectors, symbol details. |
+| `tools/admin/config.ts` | Admin configuration tools: order routing (get/set/add/remove) and full create/edit/delete lifecycle for symbols, groups, trading accounts, clients, liquidity connectors, holidays, and managers, plus `get_tokens`. Destructive writes are `*_plan` + `*_commit` pairs. |
+| `tools/admin/resource-write.ts` | Generic read-modify-write helpers backing the resource CRUD tools: `planResourceEdit` / `planResourceDelete` / `planResourceCreate` / `commitResourceWrite`. Bridges the ETag captured on the GET path onto the write path (`If-Match`), forces `id`/`version` 0 on create, and clears stale ETags so a create never leaks an `If-Match`. |
 | `tools/client/trading.ts` | Client trading tools: place/modify/cancel orders, SL/TP, close composites, working orders, history. The four money-movers (place order, close position, close-by, close all) are exposed as `*_plan` + `*_commit` pairs (confirm-before-execute). |
 | `tools/client/account.ts` | Client account tools (5): account state, summary, balances, transfer history, rate limits. |
 | `tools/client/market-data.ts` | Client market data (7 + health check): quotes, depth, symbols, symbol details, candles, conversion rate. |

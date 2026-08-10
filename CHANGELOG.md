@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Symbol writes (admin):** `update_symbol_plan` / `update_symbol_commit` — edit a symbol's server-wide configuration (any top-level fields via `updates`, and/or full `quoteSessions`/`tradeSessions` replacement lists) through a confirm-before-write flow. The plan reads the current symbol and returns a field-by-field diff plus a commit token; the commit applies it via `POST /admin/symbols/edit` (carrying the resource ETag as `If-Match` for optimistic concurrency).
+- **Group writes (admin):** `update_group_plan` / `update_group_commit` (edit a trading group) and `delete_group_plan` / `delete_group_commit` (remove one) — same read-modify-write, confirm-before-write, ETag/If-Match pattern against `/admin/groups/edit` and `/admin/groups/delete`.
+- **Config CRUD (admin):** edit + delete (confirm-before-write plan/commit) for **trading accounts** (`update_account_*`, `delete_account_*`), **clients** (`get_client`, `update_client_*`, `delete_client_*`), and **liquidity connectors** (`get_liquidity_connector`, `update_liquidity_connector_*`, `delete_liquidity_connector_*`), plus **`delete_symbol_*`**. All share one generic read-modify-write / delete helper (`resource-write.ts`) with ETag `If-Match` concurrency.
+- **Trading calendar & manager admin (admin):** holidays (`get_holidays`, `get_holiday`, `update_holiday_*`, `delete_holiday_*`), managers (`get_managers`, `get_manager`, `get_manager_self`, `update_manager_*`, `delete_manager_*`), and `get_tokens` (list issued API tokens).
+- **Create flows (admin):** `create_symbol_*`, `create_group_*`, `create_holiday_*`, `create_client_*`, `create_account_*` — clone an existing resource as a template (`fromId`) and/or pass a full `object`, apply `overrides`, and create it (id/version forced to 0, no If-Match) through the confirm-before-write plan/commit. A new trading account requires a user-supplied `password`.
+- Admin tool count 42 → 89.
+
 ### Changed
 
 - **License changed from proprietary to Apache-2.0** — the project is now open source under the Apache License, Version 2.0.
+
+### Fixed
+
+- **Session renewal no longer gives up permanently after a transient failure.** A single failed token refresh/re-authorize used to leave the renewal timer un-armed, so the session silently died and every later request failed (as HTTP 502, not 401, on some servers) until the process was restarted. Renewal now re-arms with bounded exponential backoff (30s → 5m) until it recovers.
 
 ## [2.2.0] - 2026-07-02
 
