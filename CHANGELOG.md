@@ -21,13 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chart history maintenance (admin):** `update_candle_*` and `delete_candle_*` — rewrite or remove a stored bar (symbol, interval, bar start time, OHLCV) to clean up bad ticks. The plan shows the bar currently stored at that slot.
 - **Password operations (admin):** `set_account_password_*` resets another trading account's password through the account upsert; `change_my_password_*` changes the password of the account the MCP signs in as (`POST /password` takes no account id) and warns that the stored `YB_PASSWORD` must then be updated. Passwords are never echoed back in previews or results.
 - **Bulk (batch) operations (admin):** `bulk_update_*` and `bulk_delete_*` change or remove many records in one call — pick the kind with `resource` (symbols, groups, accounts, clients, holidays, managers, liquidity) and select with `ids` or a `namePattern` glob. Records that already hold the requested values are skipped, and the preview lists every affected record with an exact total. `bulk_update_candles_*` / `bulk_delete_candles_*` cover the chart batch endpoints. Batch endpoints carry no `If-Match`, and commits opt out of transport retries.
-- Admin tool count 42 → 126.
+- **`create_liquidity_connector_plan` / `create_liquidity_connector_commit` (admin):** add a new LP feed, cloning an existing connector with `fromId` and overriding its session parameters (Host, Port, SenderCompID, TargetCompID, Password), symbol list and priority. FIX session parameters are passed through as the API returns them, so an administrator can read and set them.
+- Admin tool count 42 → 128.
 
 ### Changed
 
 - **License changed from proprietary to Apache-2.0** — the project is now open source under the Apache License, Version 2.0.
 
 ### Fixed
+
+- **Order-routing writes could never succeed.** `set_order_routing`, `add_routing_rule` and `remove_routing_rule` post to `/admin/routing/edit`, which always requires `If-Match` — but the ETag only ever arrives on `/admin/routing/query`, and `RestClient` keys ETags by path, so every write failed with `PRECONDITION_FAILED`. The routing tools now carry the ETag from the read onto the write path. Verified live: a rule can now be added, reordered and restored.
+- **A repeated GET of the same resource failed with "Not modified (304)".** `RestClient` sent `If-None-Match` from its ETag cache but never cached response bodies, so a 304 could only ever surface as an error — reading any resource twice in one session (for example reading the routing config before editing it) threw. The conditional header is no longer sent; ETags are still recorded, because writes need them for `If-Match`.
 
 - **Account and symbol filters were silently ignored, so account-scoped queries returned EVERY record on the server.** `get_working_orders`, `get_open_positions`, `get_trade_history`, `get_order_history`, `get_transfer_history`, `get_account_state` and `get_balances` sent a bare `{ A, s }` filter, but these endpoints scope with `accountFilter` (`{ accounts: [...] }`) and `symbolNames`. The server accepted the request and ignored the filter, so "positions for account X" came back with every account's positions — and anything acting on that answer would target the wrong records. Verified live before and after the fix.
 

@@ -4,6 +4,7 @@ import { RestClient } from "../rest-client.js";
 import { StaticCredentials } from "../auth/admin-auth.js";
 import * as trd from "../tools/admin/trading.js";
 import * as acct from "../tools/admin/account.js";
+import * as cfg from "../tools/admin/config.js";
 
 // Regression guard for a bug found live: these endpoints filter with `accountFilter` /
 // `symbolNames`, but the tools used to send a bare `{ A, s }`. The server SILENTLY IGNORED it and
@@ -79,4 +80,43 @@ test("account state and balances scope through accountFilter too", async () => {
 test("no filter supplied means no filter sent (server-wide)", async () => {
   await trd.getOpenPositions(client(), {});
   assert.deepEqual(sent(), {});
+});
+
+test("repeated GETs of the same resource do not send If-None-Match (no bogus 304)", async () => {
+  // RestClient records ETags for If-Match on writes but never caches bodies, so a conditional GET
+  // could only ever fail. Reading the same path twice used to throw "Not modified (304)".
+  const seen: Array<Record<string, string>> = [];
+  globalThis.fetch = (async (_url: any, init: any) => {
+    seen.push((init?.headers ?? {}) as Record<string, string>);
+    return new Response(JSON.stringify({ version: 2, routing: [] }), {
+      status: 200,
+      headers: { ETag: '"2"' },
+    });
+  }) as any;
+
+  const c = client();
+  await c.get("/admin/routing/query");
+  await c.get("/admin/routing/query"); // would have 304'd before
+  assert.equal(seen.length, 2);
+  for (const h of seen) assert.equal(h["If-None-Match"], undefined);
+  assert.equal(c.getEtag("/admin/routing/query"), '"2"'); // still recorded for If-Match
+});
+
+test("routing writes bridge the ETag from /query onto /edit (If-Match is mandatory there)", async () => {
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  globalThis.fetch = (async (url: any, init: any) => {
+    calls.push({ url: String(url), headers: (init?.headers ?? {}) as Record<string, string> });
+    return new Response(JSON.stringify({ version: 5, routing: [] }), {
+      status: 200,
+      headers: { ETag: '"5"' },
+    });
+  }) as any;
+
+  await cfg.setOrderRouting(client(), { version: 5, routing: [] });
+  const write = calls.find((x) => x.url.endsWith("/admin/routing/edit"))!;
+  assert.ok(
+    calls.some((x) => x.url.endsWith("/admin/routing/query")),
+    "must read before writing",
+  );
+  assert.equal(write.headers["If-Match"], '"5"');
 });

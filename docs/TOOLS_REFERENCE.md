@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-126-tools)** — 126 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-128-tools)** — 128 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -606,7 +606,7 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (126 tools)
+## Admin mode (128 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
@@ -1268,7 +1268,7 @@ Example:
 }
 ```
 
-### Configuration (65 tools)
+### Configuration (67 tools)
 
 #### `get_groups`
 
@@ -1472,7 +1472,7 @@ written until you commit. Field names in `updates`/`overrides` are exactly those
 | **Groups** | `get_groups`, `get_group` | `create_group_plan/commit` | `update_group_plan/commit` | `delete_group_plan/commit` |
 | **Trading accounts** | `get_all_accounts`, `get_account_info` | `create_account_plan/commit` ¹ | `update_account_plan/commit` | `delete_account_plan/commit` |
 | **Clients** | `get_clients`, `get_client` | `create_client_plan/commit` | `update_client_plan/commit` | `delete_client_plan/commit` |
-| **Liquidity connectors** | `get_liquidity_connectors`, `get_liquidity_connector` | — | `update_liquidity_connector_plan/commit` | `delete_liquidity_connector_plan/commit` |
+| **Liquidity connectors** | `get_liquidity_connectors`, `get_liquidity_connector` | `create_liquidity_connector_plan/commit` | `update_liquidity_connector_plan/commit` | `delete_liquidity_connector_plan/commit` |
 | **Holidays** (trading calendar) | `get_holidays`, `get_holiday` | `create_holiday_plan/commit` | `update_holiday_plan/commit` | `delete_holiday_plan/commit` |
 | **Managers** | `get_managers`, `get_manager`, `get_manager_self` | `create_manager_plan/commit` | `update_manager_plan/commit` | `delete_manager_plan/commit` |
 | **Access tokens** | `get_tokens` | — | — | — |

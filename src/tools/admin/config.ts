@@ -32,6 +32,19 @@ export async function getClients(client: RestClient) {
   return client.get("/admin/clients/query");
 }
 
+// /admin/routing/edit ALWAYS requires If-Match, and the ETag only ever arrives on the /query
+// path — RestClient keys ETags by path, so without bridging it every routing write fails with
+// PRECONDITION_FAILED. Read the current config and carry its ETag onto the edit path.
+async function readRoutingForWrite(client: RestClient) {
+  const current = (await readFresh(client, "/admin/routing/query")) as {
+    version: number;
+    routing: Array<{ a: unknown[]; f?: unknown[] }>;
+  };
+  const etag = client.getEtag("/admin/routing/query");
+  if (etag) client.setEtag("/admin/routing/edit", etag);
+  return current;
+}
+
 export const getOrderRoutingSchema = z.object({});
 
 export async function getOrderRouting(client: RestClient) {
@@ -56,6 +69,7 @@ export async function setOrderRouting(
   client: RestClient,
   params: z.infer<typeof setOrderRoutingSchema>,
 ) {
+  await readRoutingForWrite(client);
   return client.post("/admin/routing/edit", {
     version: params.version,
     routing: params.routing,
@@ -76,11 +90,7 @@ export async function addRoutingRule(
   client: RestClient,
   params: z.infer<typeof addRoutingRuleSchema>,
 ) {
-  // Get current routing
-  const current = (await client.get("/admin/routing/query")) as {
-    version: number;
-    routing: Array<{ a: unknown[]; f?: unknown[] }>;
-  };
+  const current = await readRoutingForWrite(client);
 
   const newRule: { a: unknown[]; f?: unknown[] } = { a: params.actions };
   if (params.filters) newRule.f = params.filters;
@@ -105,11 +115,7 @@ export async function removeRoutingRule(
   client: RestClient,
   params: z.infer<typeof removeRoutingRuleSchema>,
 ) {
-  // Get current routing
-  const current = (await client.get("/admin/routing/query")) as {
-    version: number;
-    routing: Array<{ a: unknown[]; f?: unknown[] }>;
-  };
+  const current = await readRoutingForWrite(client);
 
   const routing = current.routing || [];
   if (params.index < 0 || params.index >= routing.length) {

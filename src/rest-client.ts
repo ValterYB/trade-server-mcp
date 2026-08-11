@@ -116,16 +116,18 @@ export class RestClient {
     const url = `${this.baseUrl}/api/v1${path}`;
     const headers = this.buildHeaders("GET");
 
-    const etag = this.etags.get(path);
-    if (etag) {
-      headers["If-None-Match"] = etag;
-    }
+    // NOTE: deliberately no If-None-Match. Response bodies are not cached, so a 304 carries no
+    // data and can only be surfaced as an error — which is exactly what happened whenever the same
+    // resource was read twice in one session (e.g. read routing, then read it again before
+    // editing). ETags are still recorded below, because writes need them for If-Match.
 
     try {
       const res = await this.fetchWithTimeout(url, { method: "GET", headers });
 
+      // A 304 should now be impossible (no conditional request is sent); if a proxy manufactures
+      // one anyway, surface it as a real error rather than returning an empty body as data.
       if (res.status === 304) {
-        throw new Error("Not modified (304)");
+        throw new Error("Not modified (304): the server answered a request we did not condition");
       }
 
       if (!res.ok) {
