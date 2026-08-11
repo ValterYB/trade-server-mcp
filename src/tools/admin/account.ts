@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
+import { accountFilterSchema, buildAccountFilter } from "./filters.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 import { completenessMessage } from "../../validation.js";
 
@@ -171,4 +172,30 @@ export async function getBalances(client: RestClient) {
   // Query states for all accounts at once
   const states = await client.post("/admin/accounts/states/query", { A: ids });
   return states;
+}
+
+export const getTransferSchema = z.object({
+  transferId: z.number().describe("Transfer unique identifier (from get_transfer_history)"),
+});
+
+export async function getTransfer(client: RestClient, params: z.infer<typeof getTransferSchema>) {
+  return client.get(`/admin/transfers/get/${params.transferId}`);
+}
+
+export const getMarginCallAccountsSchema = z.object({
+  ...accountFilterSchema,
+  maxResults: z.number().optional().describe("Max results to return"),
+  sortOrder: z.enum(["asc", "desc"]).optional().describe("Sort direction"),
+});
+
+export async function getMarginCallAccounts(
+  client: RestClient,
+  params: z.infer<typeof getMarginCallAccountsSchema>,
+) {
+  const body: Record<string, unknown> = {};
+  const accountFilter = buildAccountFilter(params);
+  if (accountFilter) body.accountFilter = accountFilter;
+  if (params.maxResults !== undefined) body.maxResults = params.maxResults;
+  if (params.sortOrder !== undefined) body.sortOrder = params.sortOrder;
+  return client.post("/admin/accounts/margin-call/query", body);
 }

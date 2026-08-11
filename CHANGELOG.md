@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Config CRUD (admin):** edit + delete (confirm-before-write plan/commit) for **trading accounts** (`update_account_*`, `delete_account_*`), **clients** (`get_client`, `update_client_*`, `delete_client_*`), and **liquidity connectors** (`get_liquidity_connector`, `update_liquidity_connector_*`, `delete_liquidity_connector_*`), plus **`delete_symbol_*`**. All share one generic read-modify-write / delete helper (`resource-write.ts`) with ETag `If-Match` concurrency.
 - **Trading calendar & manager admin (admin):** holidays (`get_holidays`, `get_holiday`, `update_holiday_*`, `delete_holiday_*`), managers (`get_managers`, `get_manager`, `get_manager_self`, `update_manager_*`, `delete_manager_*`), and `get_tokens` (list issued API tokens).
 - **Create flows (admin):** `create_symbol_*`, `create_group_*`, `create_holiday_*`, `create_client_*`, `create_account_*` — clone an existing resource as a template (`fromId`) and/or pass a full `object`, apply `overrides`, and create it (id/version forced to 0, no If-Match) through the confirm-before-write plan/commit. A new trading account requires a user-supplied `password`.
-- Admin tool count 42 → 89.
+- **Reporting and lookups (admin, read-only):** `get_journal` (server audit journal by time range, severity and message mask), `get_statements` (daily/monthly statements), `get_email_services`, `find_client_by_external_id`, `get_margin_call_accounts`, `get_transfer` (single transfer), `get_working_order` / `get_historical_order` (single order by ID), and `get_conversion_rates_batch`. Account-scoped tools take one of `accounts` / `groups` / `groupMasks`.
+- Admin tool count 42 → 98.
 
 ### Changed
 

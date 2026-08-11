@@ -43,6 +43,10 @@ import {
   closeAllPositionsPlan,
   closeAllPositionsCommitSchema,
   closeAllPositionsCommit,
+  getWorkingOrderSchema,
+  getWorkingOrder,
+  getHistoricalOrderSchema,
+  getHistoricalOrder,
 } from "./tools/admin/trading.js";
 
 import {
@@ -60,6 +64,10 @@ import {
   getTransferHistory,
   getBalancesSchema,
   getBalances,
+  getTransferSchema,
+  getTransfer,
+  getMarginCallAccountsSchema,
+  getMarginCallAccounts,
 } from "./tools/admin/account.js";
 
 import {
@@ -77,6 +85,8 @@ import {
   getConversionRate,
   getIndicatorSchema,
   getIndicator,
+  getConversionRatesBatchSchema,
+  getConversionRatesBatch,
 } from "./tools/admin/market-data.js";
 
 import {
@@ -192,6 +202,14 @@ import {
   createAccountCommit,
   healthCheckSchema,
   healthCheck,
+  getJournalSchema,
+  getJournal,
+  getStatementsSchema,
+  getStatements,
+  getEmailServicesSchema,
+  getEmailServices,
+  findClientByExternalIdSchema,
+  findClientByExternalId,
 } from "./tools/admin/config.js";
 
 export function registerAdminTools(
@@ -973,6 +991,63 @@ export function registerAdminTools(
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     toolHandler((params) => updateSymbolCommit(restClient, params)),
+  );
+
+  // === REPORTING / LOOKUPS (read-only) ===
+
+  server.tool(
+    "get_journal",
+    "Search the server audit journal over a time range: who changed what, plus server events. Filter by severity and a message mask. Times are microseconds since epoch. Use this to answer who modified a symbol or group, and when.",
+    getJournalSchema.shape,
+    toolHandler((params) => getJournal(restClient, params)),
+  );
+  server.tool(
+    "get_statements",
+    "Get daily or monthly account statements for a date, optionally including orders and positions. Scope with accounts, groups, or groupMasks (defaults to all groups).",
+    getStatementsSchema.shape,
+    toolHandler((params) => getStatements(restClient, params)),
+  );
+  server.tool(
+    "get_email_services",
+    "List configured email-service (notification) configurations on the server.",
+    getEmailServicesSchema.shape,
+    toolHandler(() => getEmailServices(restClient)),
+  );
+  server.tool(
+    "find_client_by_external_id",
+    "Find a client by the external identifier your systems assigned them (not the internal client ID). Use get_clients or get_client for internal-ID lookups.",
+    findClientByExternalIdSchema.shape,
+    toolHandler((params) => findClientByExternalId(restClient, params)),
+  );
+  server.tool(
+    "get_margin_call_accounts",
+    "List trading accounts currently in margin call. Scope with accounts, groups, or groupMasks; omit the filter for all accounts.",
+    getMarginCallAccountsSchema.shape,
+    toolHandler((params) => getMarginCallAccounts(restClient, params)),
+  );
+  server.tool(
+    "get_transfer",
+    "Get a single cash transfer (deposit/withdrawal/adjustment) by its ID. Use get_transfer_history to find IDs.",
+    getTransferSchema.shape,
+    toolHandler((params) => getTransfer(restClient, params)),
+  );
+  server.tool(
+    "get_working_order",
+    "Get ONE currently working (pending) order by its ID. For a list, use get_working_orders; for an already completed order, use get_historical_order.",
+    getWorkingOrderSchema.shape,
+    toolHandler((params) => getWorkingOrder(restClient, params)),
+  );
+  server.tool(
+    "get_historical_order",
+    "Get ONE completed/cancelled/rejected order by its ID. For a list, use get_order_history; for a still-pending order, use get_working_order.",
+    getHistoricalOrderSchema.shape,
+    toolHandler((params) => getHistoricalOrder(restClient, params)),
+  );
+  server.tool(
+    "get_conversion_rates_batch",
+    "Resolve several currency conversion rates in one call. For a single pair use get_conversion_rate.",
+    getConversionRatesBatchSchema.shape,
+    toolHandler((params) => getConversionRatesBatch(restClient, params)),
   );
 
   server.tool(

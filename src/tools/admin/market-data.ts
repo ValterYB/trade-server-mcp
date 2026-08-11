@@ -292,3 +292,24 @@ export async function getIndicator(client: RestClient, params: z.infer<typeof ge
     recent: latest,
   };
 }
+
+export const getConversionRatesBatchSchema = z.object({
+  rates: z
+    .array(
+      z.object({
+        groupId: z.number().describe("Group ID for conversion context"),
+        from: z.string().describe("Source currency code, e.g. EUR"),
+        to: z.string().describe("Target currency code, e.g. USD"),
+      }),
+    )
+    .min(1)
+    .describe("Conversions to resolve in one call"),
+});
+
+export async function getConversionRatesBatch(
+  client: RestClient,
+  params: z.infer<typeof getConversionRatesBatchSchema>,
+) {
+  // The endpoint takes a bare array (AdminConversionRatesBatchRequest), not an object wrapper.
+  return client.post("/admin/conversion-rate/batch", params.rates);
+}

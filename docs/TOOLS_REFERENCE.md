@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-89-tools)** — 89 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-98-tools)** — 98 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -606,13 +606,13 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (89 tools)
+## Admin mode (98 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
 the persona guide.
 
-### Trading (19 tools)
+### Trading (21 tools)
 
 The four money-movers — placing an order, closing a position, a hedged close, and closing
 everything — are **confirm-before-execute**: each is a `*_plan` + `*_commit` pair. The `*_plan`
@@ -1004,7 +1004,7 @@ Example:
 }
 ```
 
-### Account (7 tools)
+### Account (9 tools)
 
 #### `get_account_state`
 
@@ -1126,7 +1126,7 @@ Example:
 {}
 ```
 
-### Market data (7 tools)
+### Market data (8 tools)
 
 #### `get_quote`
 
@@ -1268,7 +1268,7 @@ Example:
 }
 ```
 
-### Configuration (55 tools)
+### Configuration (59 tools)
 
 #### `get_groups`
 
@@ -1488,6 +1488,35 @@ Example — clone `EURUSD` (id 1) into a new `EURGBP`:
 {
   "fromId": 1,
   "overrides": { "name": "EURGBP", "path": "Forex/EURGBP", "description": "Euro vs Pound" }
+}
+```
+
+### Reporting and lookups (read-only)
+
+Added alongside the CRUD tools; all are plain reads.
+
+| Tool | What it does | Key parameters |
+|---|---|---|
+| `get_journal` | Server audit journal over a time range — who changed what, plus server events. Answers "who modified this symbol and when". | `fromTime`, `toTime` (microseconds since epoch), optional `severities` (`trace`…`critical`), `mask`, `maxResults` |
+| `get_statements` | Daily/monthly account statements for a date, optionally with orders and positions. | `type` (`Daily`/`Monthly`), `date` (`YYYY-MM-DD`), optional `accounts`/`groups`/`groupMasks`, `orders`, `positions` |
+| `get_email_services` | Configured email-service (notification) configurations. | none |
+| `find_client_by_external_id` | Find a client by the external ID your systems assigned. | `clientExternalId` |
+| `get_margin_call_accounts` | Accounts currently in margin call. | optional `accounts`/`groups`/`groupMasks`, `maxResults`, `sortOrder` |
+| `get_transfer` | One cash transfer by ID. | `transferId` |
+| `get_working_order` | ONE pending order by ID (list: `get_working_orders`). | `orderId` |
+| `get_historical_order` | ONE completed/cancelled order by ID (list: `get_order_history`). | `orderId` |
+| `get_conversion_rates_batch` | Several conversion rates in one call (single pair: `get_conversion_rate`). | `rates`: array of `{ groupId, from, to }` |
+
+Account-scoped tools take **one** of `accounts` (IDs), `groups` (IDs) or `groupMasks` (e.g. `["Real/*"]`); the first one supplied wins, and omitting all means server-wide.
+
+Example — audit trail for the last hour, warnings and worse:
+
+```json
+{
+  "fromTime": 1786426492000000,
+  "toTime": 1786430092000000,
+  "severities": ["warning", "error", "critical"],
+  "maxResults": 50
 }
 ```
 

@@ -644,3 +644,25 @@ export async function getAccountSummary(
 
   return { state, positions, orders };
 }
+
+export const getWorkingOrderSchema = z.object({
+  orderId: z.number().describe("Order unique identifier"),
+});
+
+export async function getWorkingOrder(
+  client: RestClient,
+  params: z.infer<typeof getWorkingOrderSchema>,
+) {
+  return client.post("/admin/orders/active/single", { orderId: params.orderId });
+}
+
+export const getHistoricalOrderSchema = z.object({
+  orderId: z.number().describe("Order unique identifier"),
+});
+
+export async function getHistoricalOrder(
+  client: RestClient,
+  params: z.infer<typeof getHistoricalOrderSchema>,
+) {
+  return client.post("/admin/orders/history/single", { orderId: params.orderId });
+}

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
+import { accountFilterSchema, buildAccountFilter } from "./filters.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 import {
   ResourceSpec,
@@ -709,4 +710,68 @@ export const healthCheckSchema = z.object({});
 
 export async function healthCheck(client: RestClient) {
   return client.get("/now");
+}
+
+// === ADMIN REPORTING / LOOKUPS (read-only) ===
+
+export const getJournalSchema = z.object({
+  fromTime: z.number().describe("Start time (microseconds since epoch)"),
+  toTime: z.number().describe("End time (microseconds since epoch)"),
+  mask: z.string().optional().describe("Substring/glob filter over journal messages"),
+  severities: z
+    .array(z.enum(["trace", "debug", "info", "warning", "error", "critical"]))
+    .optional()
+    .describe("Only these severities. Omit for all"),
+  maxResults: z.number().optional().describe("Max entries to return"),
+});
+
+export async function getJournal(client: RestClient, params: z.infer<typeof getJournalSchema>) {
+  const body: Record<string, unknown> = { fromTime: params.fromTime, toTime: params.toTime };
+  if (params.mask !== undefined) body.mask = params.mask;
+  if (params.severities !== undefined) body.severities = params.severities;
+  if (params.maxResults !== undefined) body.maxResults = params.maxResults;
+  return client.post("/admin/journal/query", body);
+}
+
+export const getStatementsSchema = z.object({
+  type: z.enum(["Daily", "Monthly"]).describe("Statement period"),
+  date: z.string().describe('Statement date as "YYYY-MM-DD"'),
+  ...accountFilterSchema,
+  orders: z.boolean().optional().describe("Include orders in the statement. Default false"),
+  positions: z.boolean().optional().describe("Include positions in the statement. Default false"),
+  maxResults: z.number().optional().describe("Max results (server caps at 250)"),
+});
+
+export async function getStatements(
+  client: RestClient,
+  params: z.infer<typeof getStatementsSchema>,
+) {
+  const body: Record<string, unknown> = {
+    type: params.type,
+    date: params.date,
+    // accountFilter is REQUIRED here; default to every group so a caller who omits it still
+    // gets a valid request rather than a rejected one.
+    accountFilter: buildAccountFilter(params) ?? { groupMasks: ["*"] },
+  };
+  if (params.orders !== undefined) body.orders = params.orders;
+  if (params.positions !== undefined) body.positions = params.positions;
+  if (params.maxResults !== undefined) body.maxResults = params.maxResults;
+  return client.post("/admin/statements/query", body);
+}
+
+export const getEmailServicesSchema = z.object({});
+
+export const getEmailServices = (client: RestClient) => client.get("/admin/email-service/query");
+
+export const findClientByExternalIdSchema = z.object({
+  clientExternalId: z.string().describe("The client's external identifier"),
+});
+
+export async function findClientByExternalId(
+  client: RestClient,
+  params: z.infer<typeof findClientByExternalIdSchema>,
+) {
+  return client.post("/admin/clients/query-by-external-id", {
+    clientExternalId: params.clientExternalId,
+  });
 }
