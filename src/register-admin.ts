@@ -268,6 +268,10 @@ import {
   createManagerPlan,
   createManagerCommitSchema,
   createManagerCommit,
+  createLiquidityConnectorPlanSchema,
+  createLiquidityConnectorPlan,
+  createLiquidityConnectorCommitSchema,
+  createLiquidityConnectorCommit,
 } from "./tools/admin/config.js";
 
 export function registerAdminTools(
@@ -1049,6 +1053,27 @@ export function registerAdminTools(
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     toolHandler((params) => updateSymbolCommit(restClient, params)),
+  );
+
+  server.registerTool(
+    "create_liquidity_connector_plan",
+    {
+      description:
+        "STEP 1 of adding a NEW liquidity connector (LP feed) — preview WITHOUT writing. Clone an existing connector with `fromId` (recommended: copies type, session parameters and symbol list) and/or pass a full `object`, then set `overrides` such as sessionParameters (Host, Port, SenderCompID, TargetCompID, Password), symbols and priority. id/version forced to 0. Only after the user confirms, call create_liquidity_connector_commit.",
+      inputSchema: createLiquidityConnectorPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createLiquidityConnectorPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_liquidity_connector_commit",
+    {
+      description:
+        "STEP 2 — create the liquidity connector previewed by create_liquidity_connector_plan. Requires its commitToken. Adds a LIVE LP session via an AI assistant — only after explicit user confirmation.",
+      inputSchema: createLiquidityConnectorCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createLiquidityConnectorCommit(restClient, params)),
   );
 
   // === BULK (BATCH) OPERATIONS ===

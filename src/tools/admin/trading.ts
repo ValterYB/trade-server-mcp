@@ -88,8 +88,10 @@ export async function getWorkingOrders(
   params: z.infer<typeof getWorkingOrdersSchema>,
 ) {
   const body: Record<string, unknown> = {};
-  if (params.accountId !== undefined) body.A = params.accountId;
-  if (params.symbol !== undefined) body.s = params.symbol;
+  // The server expects `accountFilter` / `symbolNames`; a bare { A, s } filter is SILENTLY IGNORED
+  // and the endpoint then returns EVERY record (verified live), so the wrong rows look like a match.
+  if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
+  if (params.symbol !== undefined) body.symbolNames = [params.symbol];
 
   return client.post("/admin/orders/active", body);
 }
@@ -104,8 +106,10 @@ export async function getOpenPositions(
   params: z.infer<typeof getOpenPositionsSchema>,
 ) {
   const body: Record<string, unknown> = {};
-  if (params.accountId !== undefined) body.A = params.accountId;
-  if (params.symbol !== undefined) body.s = params.symbol;
+  // The server expects `accountFilter` / `symbolNames`; a bare { A, s } filter is SILENTLY IGNORED
+  // and the endpoint then returns EVERY record (verified live), so the wrong rows look like a match.
+  if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
+  if (params.symbol !== undefined) body.symbolNames = [params.symbol];
 
   return client.post("/admin/positions/query", body);
 }
@@ -188,8 +192,10 @@ export async function getTradeHistory(
   params: z.infer<typeof getTradeHistorySchema>,
 ) {
   const body: Record<string, unknown> = {};
-  if (params.accountId !== undefined) body.A = params.accountId;
-  if (params.symbol !== undefined) body.s = params.symbol;
+  // The server expects `accountFilter` / `symbolNames`; a bare { A, s } filter is SILENTLY IGNORED
+  // and the endpoint then returns EVERY record (verified live), so the wrong rows look like a match.
+  if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
+  if (params.symbol !== undefined) body.symbolNames = [params.symbol];
   if (params.from !== undefined) body.from = params.from;
   if (params.to !== undefined) body.to = params.to;
   if (params.limit !== undefined) body.limit = params.limit;
@@ -210,8 +216,10 @@ export async function getOrderHistory(
   params: z.infer<typeof getOrderHistorySchema>,
 ) {
   const body: Record<string, unknown> = {};
-  if (params.accountId !== undefined) body.A = params.accountId;
-  if (params.symbol !== undefined) body.s = params.symbol;
+  // The server expects `accountFilter` / `symbolNames`; a bare { A, s } filter is SILENTLY IGNORED
+  // and the endpoint then returns EVERY record (verified live), so the wrong rows look like a match.
+  if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
+  if (params.symbol !== undefined) body.symbolNames = [params.symbol];
   if (params.from !== undefined) body.from = params.from;
   if (params.to !== undefined) body.to = params.to;
   if (params.limit !== undefined) body.limit = params.limit;
@@ -638,7 +646,9 @@ export async function getAccountSummary(
   params: z.infer<typeof getAccountSummarySchema>,
 ) {
   const [state, positions, orders] = await Promise.all([
-    client.post("/admin/accounts/states/query", { A: [params.accountId] }),
+    client.post("/admin/accounts/states/query", {
+      accountFilter: { accounts: [params.accountId] },
+    }),
     client.post("/admin/positions/query", { A: params.accountId }),
     client.post("/admin/orders/active", { A: params.accountId }),
   ]);

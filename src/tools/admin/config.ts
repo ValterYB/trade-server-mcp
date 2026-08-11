@@ -845,3 +845,42 @@ export const createManagerCommit = (
   client: RestClient,
   p: z.infer<typeof createManagerCommitSchema>,
 ) => commitResourceWrite(client, p.commitToken, "create_manager");
+
+// Liquidity connectors are created through the same upsert as every other config resource. Their
+// `sessionParameters` carry FIX credentials (host, port, SenderCompID, password …) in the clear —
+// that is how the API returns them, and an administrator configuring a feed needs to see and set
+// them, so they are passed through unredacted.
+export const createLiquidityConnectorPlanSchema = z.object({
+  fromId: z
+    .number()
+    .optional()
+    .describe(
+      "Existing connector ID to clone as a template (from get_liquidity_connectors) — copies its type, session parameters and symbols, which you then override.",
+    ),
+  object: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      "Full connector object (alternative to fromId): type ('YB-FIX-QUOTES' | 'YB-FIX-TRADES' | 'ONEZERO-FIX-QUOTES' | 'ONEZERO-FIX-TRADES'), priority, isEnabled, sessionParameters, parameters, symbols. id and version are forced to 0.",
+    ),
+  overrides: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      "Fields to set on the new connector, e.g. { isEnabled: false, priority: 2, symbols: [1, 50], sessionParameters: [{ name: 'Host', stringValue: 'fix.example.com' }, { name: 'Password', passwordValue: '…' }] }.",
+    ),
+});
+
+export const createLiquidityConnectorPlan = (
+  client: RestClient,
+  p: z.infer<typeof createLiquidityConnectorPlanSchema>,
+) => planResourceCreate(client, CONNECTOR_SPEC, p, "create_liquidity_connector");
+
+export const createLiquidityConnectorCommitSchema = commitTokenSchema(
+  "create_liquidity_connector_plan",
+);
+
+export const createLiquidityConnectorCommit = (
+  client: RestClient,
+  p: z.infer<typeof createLiquidityConnectorCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "create_liquidity_connector");

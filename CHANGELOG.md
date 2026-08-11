@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Account and symbol filters were silently ignored, so account-scoped queries returned EVERY record on the server.** `get_working_orders`, `get_open_positions`, `get_trade_history`, `get_order_history`, `get_transfer_history`, `get_account_state` and `get_balances` sent a bare `{ A, s }` filter, but these endpoints scope with `accountFilter` (`{ accounts: [...] }`) and `symbolNames`. The server accepted the request and ignored the filter, so "positions for account X" came back with every account's positions — and anything acting on that answer would target the wrong records. Verified live before and after the fix.
+
 - **Session renewal no longer gives up permanently after a transient failure.** A single failed token refresh/re-authorize used to leave the renewal timer un-armed, so the session silently died and every later request failed (as HTTP 502, not 401, on some servers) until the process was restarted. Renewal now re-arms with bounded exponential backoff (30s → 5m) until it recovers.
 
 ## [2.2.0] - 2026-07-02

@@ -15,7 +15,7 @@ export async function getAccountState(
   params: z.infer<typeof getAccountStateSchema>,
 ) {
   const states = await client.post("/admin/accounts/states/query", {
-    A: [params.accountId],
+    accountFilter: { accounts: [params.accountId] },
   });
   return states;
 }
@@ -146,7 +146,9 @@ export async function getTransferHistory(
   params: z.infer<typeof getTransferHistorySchema>,
 ) {
   const body: Record<string, unknown> = {};
-  if (params.accountId !== undefined) body.A = params.accountId;
+  // The server expects `accountFilter` / `symbolNames`; a bare { A, s } filter is SILENTLY IGNORED
+  // and the endpoint then returns EVERY record (verified live), so the wrong rows look like a match.
+  if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
   if (params.from !== undefined) body.from = params.from;
   if (params.to !== undefined) body.to = params.to;
   if (params.limit !== undefined) body.limit = params.limit;
@@ -172,7 +174,9 @@ export async function getBalances(client: RestClient) {
   if (ids.length === 0) return { accounts, note: "No account IDs found" };
 
   // Query states for all accounts at once
-  const states = await client.post("/admin/accounts/states/query", { A: ids });
+  const states = await client.post("/admin/accounts/states/query", {
+    accountFilter: { accounts: ids },
+  });
   return states;
 }
 
