@@ -779,12 +779,25 @@ export async function findClientByExternalId(
 // Granting a NEW manager needs its own tool: update_manager_plan reads the existing record first,
 // which 404s for an account that is not a manager yet. The manager resource is keyed by
 // `accountId` (not `id`), and a new one is created with `version` 0 and no If-Match.
+/** Every boolean permission set to false, so a fresh manager starts with no rights. */
+function denyAllPermissions(record: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) out[k] = typeof v === "boolean" ? false : v;
+  return out;
+}
+
 export const createManagerPlanSchema = z.object({
   accountId: z.number().describe("Trading account to grant manager permissions to"),
   fromId: z
     .number()
     .optional()
     .describe("Existing manager's account ID to copy permissions from (from get_managers)"),
+  groups: z
+    .string()
+    .optional()
+    .describe(
+      'Group masks this manager may administer, e.g. "*" for every group or "Real/*". Required by the server; defaults to "*".',
+    ),
   permissions: z
     .record(z.boolean())
     .optional()
@@ -800,15 +813,22 @@ export async function createManagerPlan(
   client: RestClient,
   params: z.infer<typeof createManagerPlanSchema>,
 ) {
+  // The manager record must be COMPLETE: the server rejects a sparse body (just the flags you
+  // care about) with "Invalid body". With no template to clone, start from the signed-in manager's
+  // own record with every permission turned OFF, so the new manager ends up with exactly the flags
+  // that were asked for and nothing else.
   const template =
     params.fromId != null
       ? await readFresh(client, `/admin/managers/get/${params.fromId}`)
-      : ({} as Record<string, unknown>);
+      : denyAllPermissions(await readFresh(client, "/admin/managers/self"));
   const next: Record<string, unknown> = {
     ...template,
     ...(params.permissions ?? {}),
     accountId: params.accountId,
     version: 0,
+    // /admin/managers/self omits `groups`, but the edit endpoint requires it — without it the
+    // server rejects the body as "Invalid body" (observed live).
+    groups: params.groups ?? (template.groups as string | undefined) ?? "*",
   };
   return {
     resource: "manager",

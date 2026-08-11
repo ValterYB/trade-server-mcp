@@ -193,3 +193,31 @@ test("book lookup surfaces a clear error when neither route yields the record", 
     /No trade with id 424242 was found/,
   );
 });
+
+test("create_manager without a template sends a COMPLETE record with every permission off", async () => {
+  // The server rejects a sparse manager body with "Invalid body" (observed live), so with no
+  // fromId the tool starts from /admin/managers/self and turns every boolean off.
+  respond = () => ({
+    accountId: 1,
+    version: 9,
+    viewSymbols: true,
+    configureSymbols: true,
+    viewGroups: true,
+    balanceOperations: true,
+  });
+  const plan = (await cfg.createManagerPlan(client(), {
+    accountId: 77,
+    permissions: { viewSymbols: true },
+  })) as { commitToken: string; willCreate: Record<string, unknown> };
+
+  assert.equal(captured[0].url, "http://ts/api/v1/admin/managers/self");
+  assert.equal(plan.willCreate.accountId, 77);
+  assert.equal(plan.willCreate.version, 0);
+  assert.equal(plan.willCreate.viewSymbols, true); // asked for
+  assert.equal(plan.willCreate.configureSymbols, false); // defaulted off, but PRESENT
+  assert.equal(plan.willCreate.viewGroups, false);
+  assert.equal(plan.willCreate.balanceOperations, false);
+  // completeness is the point: every field of the reference record is carried over
+  assert.equal(plan.willCreate.groups, "*"); // required by /edit; managers/self omits it
+  assert.equal(Object.keys(plan.willCreate).length, 7);
+});
