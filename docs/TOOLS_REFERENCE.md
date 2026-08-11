@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-118-tools)** — 118 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-126-tools)** — 126 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -606,7 +606,7 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (118 tools)
+## Admin mode (126 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
@@ -1126,7 +1126,7 @@ Example:
 {}
 ```
 
-### Market data (12 tools)
+### Market data (16 tools)
 
 #### `get_quote`
 
@@ -1268,7 +1268,7 @@ Example:
 }
 ```
 
-### Configuration (61 tools)
+### Configuration (65 tools)
 
 #### `get_groups`
 
@@ -1490,6 +1490,46 @@ Example — clone `EURUSD` (id 1) into a new `EURGBP`:
   "overrides": { "name": "EURGBP", "path": "Forex/EURGBP", "description": "Euro vs Pound" }
 }
 ```
+
+### Bulk (batch) operations
+
+Change or remove **many records in one call** — the common case being "set this field on every
+`EUR*` symbol". One parameterised pair covers every config resource instead of a separate tool per
+kind.
+
+| Tool | What it does |
+|---|---|
+| `bulk_update_plan` / `_commit` | Set the same `updates` on every selected record. |
+| `bulk_delete_plan` / `_commit` | Delete every selected record. |
+| `bulk_update_candles_plan` / `_commit` | Write many bars for one symbol + interval. |
+| `bulk_delete_candles_plan` / `_commit` | Delete many bars for one symbol + interval. |
+
+**Selecting records.** `resource` picks the kind — `symbols`, `groups`, `accounts`, `clients`,
+`holidays`, `managers`, `liquidity` — and then either:
+
+- `ids`: explicit record IDs (for `managers`, account IDs), or
+- `namePattern`: a glob over the record's name — `EUR*`, `Real/*`, `*`. Only resources that have a
+  name support this (`symbols`, `groups`, `holidays`, `liquidity`); the others must use `ids`.
+
+The plan lists every affected record (first 20, with an exact total), and **skips records that
+already hold the requested values** — so re-running a bulk change is a no-op rather than a version
+bump on everything. Batch endpoints carry no `If-Match` (each object carries its own `version`),
+and the commit is never retried on a connection error, so a partly-applied batch cannot silently
+repeat.
+
+Example — a five-point markup on every EUR pair:
+
+```json
+{
+  "resource": "symbols",
+  "namePattern": "EUR*",
+  "updates": { "bidMarkup": 5, "askMarkup": 5 }
+}
+```
+
+> Order, position, trade and transfer batch endpoints are **not** exposed: their bodies are sparse
+> per-record updates (and, for transfers, move money), so they are better served by the single-record
+> tools with an explicit confirmation each.
 
 ### Chart history and passwords
 

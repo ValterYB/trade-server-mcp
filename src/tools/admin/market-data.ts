@@ -454,3 +454,111 @@ export async function deleteCandleCommit(
     retryOnConnectionError: false,
   });
 }
+
+// Bulk candle maintenance: one symbol + interval, many bars in a single call. The wire body groups
+// the bars under the symbol (`{ si, i, d: [...] }`) rather than repeating it per bar, so this is a
+// different shape from the generic config bulk tools.
+
+export const bulkUpdateCandlesPlanSchema = z.object({
+  symbolId: z.number().describe("Symbol unique identifier (from get_symbols)"),
+  interval: z.enum(EDITABLE_INTERVALS).describe("Candle interval that holds the bars"),
+  bars: z
+    .array(
+      z.object({
+        barTime: z.number().describe("Bar START time (microseconds since epoch)"),
+        open: z.number(),
+        high: z.number(),
+        low: z.number(),
+        close: z.number(),
+        volume: z.number(),
+      }),
+    )
+    .min(1)
+    .describe("Bars to write; existing bars at those times are overwritten"),
+});
+
+export async function bulkUpdateCandlesPlan(
+  client: RestClient,
+  params: z.infer<typeof bulkUpdateCandlesPlanSchema>,
+) {
+  const body = {
+    si: params.symbolId,
+    i: params.interval,
+    d: params.bars.map((b) => ({
+      t: b.barTime,
+      o: b.open,
+      h: b.high,
+      l: b.low,
+      c: b.close,
+      v: b.volume,
+    })),
+  };
+  const times = params.bars.map((b) => b.barTime).sort((a, b) => a - b);
+  return {
+    symbolId: params.symbolId,
+    interval: params.interval,
+    barCount: params.bars.length,
+    timeRange: { firstBar: times[0], lastBar: times[times.length - 1] },
+    commitToken: issuePlan(body, "bulk_update_candles"),
+    disclosure: `You are confirming a LIVE rewrite of ${params.bars.length} stored price bar(s) via an AI assistant. Charts and anything derived from this history will change. Review the range, then call bulk_update_candles_commit with this commitToken. Nothing is written until you commit.`,
+  };
+}
+
+export const bulkUpdateCandlesCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by bulk_update_candles_plan"),
+});
+
+export async function bulkUpdateCandlesCommit(
+  client: RestClient,
+  params: z.infer<typeof bulkUpdateCandlesCommitSchema>,
+) {
+  return client.post(
+    "/admin/charts/batch/edit",
+    takeCommit(params.commitToken, "bulk_update_candles"),
+    { retryOnConnectionError: false },
+  );
+}
+
+export const bulkDeleteCandlesPlanSchema = z.object({
+  symbolId: z.number().describe("Symbol unique identifier (from get_symbols)"),
+  interval: z.enum(EDITABLE_INTERVALS).describe("Candle interval that holds the bars"),
+  barTimes: z
+    .array(z.number())
+    .min(1)
+    .describe("START times of the bars to delete (microseconds since epoch)"),
+});
+
+export async function bulkDeleteCandlesPlan(
+  client: RestClient,
+  params: z.infer<typeof bulkDeleteCandlesPlanSchema>,
+) {
+  const times = [...params.barTimes].sort((a, b) => a - b);
+  return {
+    willDelete: {
+      symbolId: params.symbolId,
+      interval: params.interval,
+      barCount: times.length,
+      timeRange: { firstBar: times[0], lastBar: times[times.length - 1] },
+    },
+    commitToken: issuePlan(
+      { si: params.symbolId, i: params.interval, d: params.barTimes },
+      "bulk_delete_candles",
+    ),
+    disclosure: `You are confirming the LIVE DELETION of ${times.length} stored price bar(s) via an AI assistant. The gaps will show in charts and in anything derived from history. Review the range, then call bulk_delete_candles_commit with this commitToken. Nothing is deleted until you commit.`,
+  };
+}
+
+export const bulkDeleteCandlesCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by bulk_delete_candles_plan"),
+});
+
+export async function bulkDeleteCandlesCommit(
+  client: RestClient,
+  params: z.infer<typeof bulkDeleteCandlesCommitSchema>,
+) {
+  return client.post(
+    "/admin/charts/batch/delete",
+    takeCommit(params.commitToken, "bulk_delete_candles"),
+    { retryOnConnectionError: false },
+  );
+}

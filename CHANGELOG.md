@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Single-record lookups survive servers that do not serve get-by-id.** `get_position`, `get_trade`, `get_transfer` and the position/trade plans try the documented `GET /admin/<res>/get/{id}` first and, if the server does not serve it (observed live: 502 for every id, including nonexistent ones), fall back to the corresponding `/query` endpoint and select the record. Pass `accountId` to narrow that fallback.
 - **Chart history maintenance (admin):** `update_candle_*` and `delete_candle_*` — rewrite or remove a stored bar (symbol, interval, bar start time, OHLCV) to clean up bad ticks. The plan shows the bar currently stored at that slot.
 - **Password operations (admin):** `set_account_password_*` resets another trading account's password through the account upsert; `change_my_password_*` changes the password of the account the MCP signs in as (`POST /password` takes no account id) and warns that the stored `YB_PASSWORD` must then be updated. Passwords are never echoed back in previews or results.
-- Admin tool count 42 → 118.
+- **Bulk (batch) operations (admin):** `bulk_update_*` and `bulk_delete_*` change or remove many records in one call — pick the kind with `resource` (symbols, groups, accounts, clients, holidays, managers, liquidity) and select with `ids` or a `namePattern` glob. Records that already hold the requested values are skipped, and the preview lists every affected record with an exact total. `bulk_update_candles_*` / `bulk_delete_candles_*` cover the chart batch endpoints. Batch endpoints carry no `If-Match`, and commits opt out of transport retries.
+- Admin tool count 42 → 126.
 
 ### Changed
 

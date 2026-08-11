@@ -2,6 +2,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { RestClient } from "./rest-client.js";
 import { WsClient } from "./ws-client.js";
 import { toolHandler } from "./tool-handler.js";
+import {
+  bulkUpdatePlanSchema,
+  bulkUpdatePlan,
+  bulkUpdateCommitSchema,
+  bulkUpdateCommit,
+  bulkDeletePlanSchema,
+  bulkDeletePlan,
+  bulkDeleteCommitSchema,
+  bulkDeleteCommit,
+} from "./tools/admin/bulk.js";
 
 // Tool imports
 import {
@@ -123,6 +133,14 @@ import {
   deleteCandlePlan,
   deleteCandleCommitSchema,
   deleteCandleCommit,
+  bulkUpdateCandlesPlanSchema,
+  bulkUpdateCandlesPlan,
+  bulkUpdateCandlesCommitSchema,
+  bulkUpdateCandlesCommit,
+  bulkDeleteCandlesPlanSchema,
+  bulkDeleteCandlesPlan,
+  bulkDeleteCandlesCommitSchema,
+  bulkDeleteCandlesCommit,
 } from "./tools/admin/market-data.js";
 
 import {
@@ -1031,6 +1049,89 @@ export function registerAdminTools(
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     toolHandler((params) => updateSymbolCommit(restClient, params)),
+  );
+
+  // === BULK (BATCH) OPERATIONS ===
+
+  server.registerTool(
+    "bulk_update_plan",
+    {
+      description:
+        "STEP 1 of changing the SAME fields on MANY records at once — preview WITHOUT writing. Pick the record kind with `resource` (symbols, groups, accounts, clients, holidays, managers, liquidity), select with `ids` or a `namePattern` glob ('EUR*', 'Real/*', '*'), and give the fields in `updates`. Returns how many records match, how many actually change (already-matching ones are skipped), the affected names and a commitToken. Only after the user confirms, call bulk_update_commit.",
+      inputSchema: bulkUpdatePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkUpdatePlan(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_update_commit",
+    {
+      description:
+        "STEP 2 — apply the bulk change previewed by bulk_update_plan in one batch call. Requires its commitToken. Rewrites MANY LIVE server-wide records via an AI assistant — only after explicit user confirmation.",
+      inputSchema: bulkUpdateCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkUpdateCommit(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_delete_plan",
+    {
+      description:
+        "STEP 1 of deleting MANY records at once — preview WITHOUT deleting. Pick the record kind with `resource` and select with `ids` or a `namePattern` glob. Returns the exact count and the affected names plus a commitToken. Only after the user confirms, call bulk_delete_commit.",
+      inputSchema: bulkDeletePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkDeletePlan(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_delete_commit",
+    {
+      description:
+        "STEP 2 — delete everything previewed by bulk_delete_plan in one batch call. Requires its commitToken. Permanently removes MANY LIVE server-wide records via an AI assistant — only after explicit user confirmation.",
+      inputSchema: bulkDeleteCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkDeleteCommit(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_update_candles_plan",
+    {
+      description:
+        "STEP 1 of writing MANY price bars for one symbol and interval in a single call — preview WITHOUT writing. Returns the bar count and time range plus a commitToken. For a single bar use update_candle_plan. Only after the user confirms, call bulk_update_candles_commit.",
+      inputSchema: bulkUpdateCandlesPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkUpdateCandlesPlan(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_update_candles_commit",
+    {
+      description:
+        "STEP 2 — write the bars previewed by bulk_update_candles_plan. Requires its commitToken. Rewrites LIVE stored price history via an AI assistant — only after explicit user confirmation.",
+      inputSchema: bulkUpdateCandlesCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkUpdateCandlesCommit(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_delete_candles_plan",
+    {
+      description:
+        "STEP 1 of deleting MANY price bars for one symbol and interval — preview WITHOUT deleting. Returns the bar count and time range plus a commitToken. For a single bar use delete_candle_plan. Only after the user confirms, call bulk_delete_candles_commit.",
+      inputSchema: bulkDeleteCandlesPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkDeleteCandlesPlan(restClient, params)),
+  );
+  server.registerTool(
+    "bulk_delete_candles_commit",
+    {
+      description:
+        "STEP 2 — delete the bars previewed by bulk_delete_candles_plan. Requires its commitToken. Permanently removes bars from LIVE price history via an AI assistant — only after explicit user confirmation.",
+      inputSchema: bulkDeleteCandlesCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => bulkDeleteCandlesCommit(restClient, params)),
   );
 
   // === CHART HISTORY / PASSWORDS ===

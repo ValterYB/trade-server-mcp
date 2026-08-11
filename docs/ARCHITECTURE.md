@@ -22,7 +22,7 @@ design decisions behind it all.
                                   v                                             v
                        +--------------------+                       +---------------------+
                        | register-admin.ts  |                       | register-client.ts  |
-                       | 118 tools           |                       | 30 tools            |
+                       | 126 tools           |                       | 30 tools            |
                        | 4 resources        |                       | 1 resource          |
                        +---------+----------+                       +----------+----------+
                                  |                                             |
@@ -66,7 +66,7 @@ Everything under `src/`:
 |---|---|
 | `index.ts` | Entry point: parse env config, construct the auth provider and clients for the selected mode, register tools, connect the stdio transport, log the startup line. |
 | `config.ts` | Environment-variable parsing: mode selection and inference, whitespace trimming, validation, and every startup error message. |
-| `register-admin.ts` | Registers the 118 admin tools and 4 MCP resources, wiring each tool name + description + schema to its implementation. |
+| `register-admin.ts` | Registers the 126 admin tools and 4 MCP resources, wiring each tool name + description + schema to its implementation. |
 | `register-client.ts` | Registers the 30 client tools and 1 MCP resource; exports `CLIENT_TOOL_COUNT`; wraps every tool so sign-in failure hints surface in tool errors. |
 | `tool-handler.ts` | Wraps each tool function for MCP: serializes results to JSON text, converts thrown errors into a structured `{ error, message }` result with `isError: true`. |
 | `rest-client.ts` | Signed REST client for `/api/v1`: header construction, HMAC signing, ETag caching (`If-None-Match` / `If-Match`), semantic error mapping (`ApiError`), 401 renew-and-retry (`withAuthRetry`), and the transport retry policy. |
