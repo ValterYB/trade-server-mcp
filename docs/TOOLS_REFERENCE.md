@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-110-tools)** — 110 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-118-tools)** — 118 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -606,7 +606,7 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (110 tools)
+## Admin mode (118 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
@@ -1004,7 +1004,7 @@ Example:
 }
 ```
 
-### Account (9 tools)
+### Account (13 tools)
 
 #### `get_account_state`
 
@@ -1126,7 +1126,7 @@ Example:
 {}
 ```
 
-### Market data (8 tools)
+### Market data (12 tools)
 
 #### `get_quote`
 
@@ -1490,6 +1490,25 @@ Example — clone `EURUSD` (id 1) into a new `EURGBP`:
   "overrides": { "name": "EURGBP", "path": "Forex/EURGBP", "description": "Euro vs Pound" }
 }
 ```
+
+### Chart history and passwords
+
+| Tool | What it does |
+|---|---|
+| `update_candle_plan` / `_commit` | Rewrite (or add) one stored bar — e.g. to erase a bad-tick spike. Takes `symbolId`, `interval` (`1M`…`D`), `barTime` (bar START, microseconds since epoch) and `open`/`high`/`low`/`close`/`volume`. The plan shows the bar currently stored at that slot. |
+| `delete_candle_plan` / `_commit` | Delete one stored bar, leaving a gap in history. |
+| `set_account_password_plan` / `_commit` | Manager resets **another** trading account's password (written through the account upsert). |
+| `change_my_password_plan` / `_commit` | Changes the password of **the account this MCP signs in as** — `POST /password` takes no account id. |
+
+Passwords are supplied by the user and are **never echoed back**: previews show `(hidden)`.
+
+> **`change_my_password` breaks your configuration.** After committing, the stored `YB_PASSWORD`
+> still holds the old value, so the next sign-in fails until you update it. To reset a *client's*
+> password use `set_account_password_plan` instead.
+
+Editing chart history changes everything derived from it — charts, indicators, and any report that
+reads bars. Both candle writes are confirm-before-execute and are never retried on a connection
+error.
 
 ### Position and trade record maintenance
 

@@ -4,6 +4,7 @@ import { WsClient } from "../../ws-client.js";
 import * as ti from "technicalindicators";
 import { mapWithConcurrency } from "../../util/concurrency.js";
 import { QUOTES_MAX_SYMBOLS, QUOTES_CONCURRENCY } from "../../constants.js";
+import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 
 export const getQuoteSchema = z.object({
   symbol: z.string().describe("Symbol name, e.g. EURUSD"),
@@ -312,4 +313,144 @@ export async function getConversionRatesBatch(
 ) {
   // The endpoint takes a bare array (AdminConversionRatesBatchRequest), not an object wrapper.
   return client.post("/admin/conversion-rate/batch", params.rates);
+}
+
+// === CHART (CANDLE) MAINTENANCE (plan/commit) ===
+//
+// Rewrites stored bars, e.g. to erase a bad tick that left a spike in history. The wire body is
+// terse: si (symbol id), i (interval), t (bar start, microseconds), o/h/l/c/v. There is no
+// version/ETag concurrency here. The plan reads the existing bar (best effort) so the preview can
+// show what is about to be overwritten, and both writes are gated behind confirm-before-execute.
+
+const EDITABLE_INTERVALS = ["1M", "5M", "15M", "30M", "1H", "4H", "D"] as const;
+
+async function readExistingCandle(
+  client: RestClient,
+  symbolId: number,
+  interval: string,
+  barTime: number,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const res = (await client.post("/admin/charts/get", {
+      symbolSelector: { symbolId },
+      interval,
+      from: barTime,
+      to: barTime + 1,
+      maxResults: 1,
+    })) as { d?: Array<Record<string, unknown>> };
+    return res?.d?.find((bar) => Number(bar.t) === Number(barTime)) ?? null;
+  } catch {
+    return null; // preview degrades gracefully; the write itself is an upsert either way
+  }
+}
+
+export const updateCandlePlanSchema = z.object({
+  symbolId: z.number().describe("Symbol unique identifier (from get_symbols)"),
+  interval: z.enum(EDITABLE_INTERVALS).describe("Candle interval that holds the bar"),
+  barTime: z.number().describe("Bar START time (microseconds since epoch)"),
+  open: z.number().describe("Open price"),
+  high: z.number().describe("High price"),
+  low: z.number().describe("Low price"),
+  close: z.number().describe("Close price"),
+  volume: z.number().describe("Volume"),
+});
+
+const UPDATE_CANDLE_DISCLOSURE =
+  "You are confirming a LIVE rewrite of stored price history via an AI assistant. Charts, indicators and anything derived from this bar will change. Review the before/after, then call update_candle_commit with this commitToken. Nothing is written until you commit.";
+
+export async function updateCandlePlan(
+  client: RestClient,
+  params: z.infer<typeof updateCandlePlanSchema>,
+) {
+  const existing = await readExistingCandle(
+    client,
+    params.symbolId,
+    params.interval,
+    params.barTime,
+  );
+  const body = {
+    si: params.symbolId,
+    i: params.interval,
+    t: params.barTime,
+    o: params.open,
+    h: params.high,
+    l: params.low,
+    c: params.close,
+    v: params.volume,
+  };
+  return {
+    symbolId: params.symbolId,
+    interval: params.interval,
+    barTime: params.barTime,
+    existingBar: existing ?? "(no stored bar at this time — this will add one)",
+    newBar: {
+      open: params.open,
+      high: params.high,
+      low: params.low,
+      close: params.close,
+      volume: params.volume,
+    },
+    commitToken: issuePlan(body, "update_candle"),
+    disclosure: UPDATE_CANDLE_DISCLOSURE,
+  };
+}
+
+export const updateCandleCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by update_candle_plan"),
+});
+
+export async function updateCandleCommit(
+  client: RestClient,
+  params: z.infer<typeof updateCandleCommitSchema>,
+) {
+  return client.post("/admin/charts/edit", takeCommit(params.commitToken, "update_candle"), {
+    retryOnConnectionError: false,
+  });
+}
+
+export const deleteCandlePlanSchema = z.object({
+  symbolId: z.number().describe("Symbol unique identifier (from get_symbols)"),
+  interval: z.enum(EDITABLE_INTERVALS).describe("Candle interval that holds the bar"),
+  barTime: z.number().describe("Bar START time (microseconds since epoch)"),
+});
+
+const DELETE_CANDLE_DISCLOSURE =
+  "You are confirming the LIVE DELETION of a stored price bar via an AI assistant. The gap will be visible in charts and in anything derived from history. Review the target, then call delete_candle_commit with this commitToken. Nothing is deleted until you commit.";
+
+export async function deleteCandlePlan(
+  client: RestClient,
+  params: z.infer<typeof deleteCandlePlanSchema>,
+) {
+  const existing = await readExistingCandle(
+    client,
+    params.symbolId,
+    params.interval,
+    params.barTime,
+  );
+  return {
+    willDelete: {
+      symbolId: params.symbolId,
+      interval: params.interval,
+      barTime: params.barTime,
+      storedBar: existing ?? "(no stored bar found at this time)",
+    },
+    commitToken: issuePlan(
+      { si: params.symbolId, i: params.interval, t: params.barTime },
+      "delete_candle",
+    ),
+    disclosure: DELETE_CANDLE_DISCLOSURE,
+  };
+}
+
+export const deleteCandleCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by delete_candle_plan"),
+});
+
+export async function deleteCandleCommit(
+  client: RestClient,
+  params: z.infer<typeof deleteCandleCommitSchema>,
+) {
+  return client.post("/admin/charts/delete", takeCommit(params.commitToken, "delete_candle"), {
+    retryOnConnectionError: false,
+  });
 }

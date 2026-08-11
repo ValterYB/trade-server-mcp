@@ -88,6 +88,14 @@ import {
   getTransfer,
   getMarginCallAccountsSchema,
   getMarginCallAccounts,
+  setAccountPasswordPlanSchema,
+  setAccountPasswordPlan,
+  setAccountPasswordCommitSchema,
+  setAccountPasswordCommit,
+  changeMyPasswordPlanSchema,
+  changeMyPasswordPlan,
+  changeMyPasswordCommitSchema,
+  changeMyPasswordCommit,
 } from "./tools/admin/account.js";
 
 import {
@@ -107,6 +115,14 @@ import {
   getIndicator,
   getConversionRatesBatchSchema,
   getConversionRatesBatch,
+  updateCandlePlanSchema,
+  updateCandlePlan,
+  updateCandleCommitSchema,
+  updateCandleCommit,
+  deleteCandlePlanSchema,
+  deleteCandlePlan,
+  deleteCandleCommitSchema,
+  deleteCandleCommit,
 } from "./tools/admin/market-data.js";
 
 import {
@@ -1015,6 +1031,89 @@ export function registerAdminTools(
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     toolHandler((params) => updateSymbolCommit(restClient, params)),
+  );
+
+  // === CHART HISTORY / PASSWORDS ===
+
+  server.registerTool(
+    "update_candle_plan",
+    {
+      description:
+        "STEP 1 of rewriting a stored price bar (e.g. to erase a bad-tick spike) — preview WITHOUT writing. Reads the bar currently stored for that symbol/interval/time and shows it next to the values you supplied, plus a commitToken. Bar time is the bar's START, in microseconds since epoch. Only after the user confirms, call update_candle_commit.",
+      inputSchema: updateCandlePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateCandlePlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_candle_commit",
+    {
+      description:
+        "STEP 2 — write the bar previewed by update_candle_plan. Requires its commitToken. Rewrites LIVE stored price history via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateCandleCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateCandleCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_candle_plan",
+    {
+      description:
+        "STEP 1 of deleting a stored price bar — preview WITHOUT deleting. Shows the bar currently stored at that symbol/interval/time plus a commitToken. Only after the user confirms, call delete_candle_commit.",
+      inputSchema: deleteCandlePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteCandlePlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_candle_commit",
+    {
+      description:
+        "STEP 2 — delete the bar previewed by delete_candle_plan. Requires its commitToken. Permanently removes a bar from LIVE price history via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteCandleCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteCandleCommit(restClient, params)),
+  );
+  server.registerTool(
+    "set_account_password_plan",
+    {
+      description:
+        "STEP 1 of resetting ANOTHER trading account's password (manager operation) — preview WITHOUT writing. The user must supply the new password; it is never echoed back. Returns the target account plus a commitToken. To change the password of the account this MCP signs in as, use change_my_password_plan instead. Only after the user confirms, call set_account_password_commit.",
+      inputSchema: setAccountPasswordPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => setAccountPasswordPlan(restClient, params)),
+  );
+  server.registerTool(
+    "set_account_password_commit",
+    {
+      description:
+        "STEP 2 — apply the password reset previewed by set_account_password_plan. Requires its commitToken. Locks out anyone using the old password — only after explicit user confirmation.",
+      inputSchema: setAccountPasswordCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => setAccountPasswordCommit(restClient, params)),
+  );
+  server.registerTool(
+    "change_my_password_plan",
+    {
+      description:
+        "STEP 1 of changing the password of THE ACCOUNT THIS MCP IS SIGNED IN AS — preview WITHOUT writing. POST /password takes no account id, so this cannot target a client: use set_account_password_plan for that. Committing will break this MCP's stored configuration until YB_PASSWORD is updated. Only after the user confirms, call change_my_password_commit.",
+      inputSchema: changeMyPasswordPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => changeMyPasswordPlan(restClient, params)),
+  );
+  server.registerTool(
+    "change_my_password_commit",
+    {
+      description:
+        "STEP 2 — change the signed-in account's own password, as previewed by change_my_password_plan. Requires its commitToken. The MCP configuration must then be updated with the new password or the server stops connecting — only after explicit user confirmation.",
+      inputSchema: changeMyPasswordCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => changeMyPasswordCommit(restClient, params)),
   );
 
   // === POSITION / TRADE RECORD MAINTENANCE ===

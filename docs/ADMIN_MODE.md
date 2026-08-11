@@ -2,8 +2,8 @@
 
 Admin mode is for the people who **run** the Trade Server: brokers and their operations teams.
 Where a trader sees one account, admin mode sees the whole server — every account, every
-group, every routing rule, every liquidity connector. It exposes **110 tools and 4 MCP
-resources** (see the [Tools Reference](./TOOLS_REFERENCE.md#admin-mode-110-tools) for every
+group, every routing rule, every liquidity connector. It exposes **118 tools and 4 MCP
+resources** (see the [Tools Reference](./TOOLS_REFERENCE.md#admin-mode-118-tools) for every
 parameter and example).
 
 What that means in practice:
@@ -131,7 +131,7 @@ Review past movements with `get_transfer_history`.
 
 ## Where next
 
-- [Tools Reference](./TOOLS_REFERENCE.md) — all 110 admin tools with parameters and examples
+- [Tools Reference](./TOOLS_REFERENCE.md) — all 118 admin tools with parameters and examples
 - [Configuration](./CONFIGURATION.md) — admin credential setup
 - [Authentication](./AUTHENTICATION.md) — request signing with the admin key pair
 - [Security](./SECURITY.md) — key-handling guarantees and recommendations

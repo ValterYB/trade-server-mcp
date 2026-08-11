@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Position and trade record maintenance (admin):** `get_position`, `get_trade`, and confirm-before-write `update_position_*` / `delete_position_*` / `update_trade_*` / `delete_trade_*` for back-office corrections. These endpoints take a sparse `{ id, account, …changed }` update with no ETag concurrency, and their commits opt out of transport retries so a correction cannot be applied twice.
 - **`create_manager_plan` / `create_manager_commit` (admin):** grant manager permissions to an account, optionally copying an existing manager via `fromId`. Previously only existing managers could be edited.
 - **Single-record lookups survive servers that do not serve get-by-id.** `get_position`, `get_trade`, `get_transfer` and the position/trade plans try the documented `GET /admin/<res>/get/{id}` first and, if the server does not serve it (observed live: 502 for every id, including nonexistent ones), fall back to the corresponding `/query` endpoint and select the record. Pass `accountId` to narrow that fallback.
-- Admin tool count 42 → 110.
+- **Chart history maintenance (admin):** `update_candle_*` and `delete_candle_*` — rewrite or remove a stored bar (symbol, interval, bar start time, OHLCV) to clean up bad ticks. The plan shows the bar currently stored at that slot.
+- **Password operations (admin):** `set_account_password_*` resets another trading account's password through the account upsert; `change_my_password_*` changes the password of the account the MCP signs in as (`POST /password` takes no account id) and warns that the stored `YB_PASSWORD` must then be updated. Passwords are never echoed back in previews or results.
+- Admin tool count 42 → 118.
 
 ### Changed
 
