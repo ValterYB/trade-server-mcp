@@ -775,3 +775,53 @@ export async function findClientByExternalId(
     clientExternalId: params.clientExternalId,
   });
 }
+
+// Granting a NEW manager needs its own tool: update_manager_plan reads the existing record first,
+// which 404s for an account that is not a manager yet. The manager resource is keyed by
+// `accountId` (not `id`), and a new one is created with `version` 0 and no If-Match.
+export const createManagerPlanSchema = z.object({
+  accountId: z.number().describe("Trading account to grant manager permissions to"),
+  fromId: z
+    .number()
+    .optional()
+    .describe("Existing manager's account ID to copy permissions from (from get_managers)"),
+  permissions: z
+    .record(z.boolean())
+    .optional()
+    .describe(
+      "Permission flags to set, using the exact field names get_managers returns (e.g. { viewSymbols: true, configureSymbols: true }). Applied on top of the copied template when fromId is given.",
+    ),
+});
+
+const CREATE_MANAGER_DISCLOSURE =
+  "You are confirming the LIVE CREATION of a manager (granting server-wide admin permissions to an account) via an AI assistant. Review the permissions, then call create_manager_commit with this commitToken. Nothing is written until you commit.";
+
+export async function createManagerPlan(
+  client: RestClient,
+  params: z.infer<typeof createManagerPlanSchema>,
+) {
+  const template =
+    params.fromId != null
+      ? await readFresh(client, `/admin/managers/get/${params.fromId}`)
+      : ({} as Record<string, unknown>);
+  const next: Record<string, unknown> = {
+    ...template,
+    ...(params.permissions ?? {}),
+    accountId: params.accountId,
+    version: 0,
+  };
+  return {
+    resource: "manager",
+    action: "create",
+    willCreate: next,
+    commitToken: issuePlan({ path: "/admin/managers/edit", object: next }, "create_manager"),
+    disclosure: CREATE_MANAGER_DISCLOSURE,
+  };
+}
+
+export const createManagerCommitSchema = commitTokenSchema("create_manager_plan");
+
+export const createManagerCommit = (
+  client: RestClient,
+  p: z.infer<typeof createManagerCommitSchema>,
+) => commitResourceWrite(client, p.commitToken, "create_manager");

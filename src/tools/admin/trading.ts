@@ -666,3 +666,242 @@ export async function getHistoricalOrder(
 ) {
   return client.post("/admin/orders/history/single", { orderId: params.orderId });
 }
+
+// === POSITION / TRADE RECORD MAINTENANCE (plan/commit) ===
+//
+// Unlike the config resources, these endpoints take a SPARSE update — { id, A, ...changed fields }
+// — and carry no `version`/If-Match concurrency (PositionModify / TradeUpdate in the admin SDK).
+// The account id `A` is required by the wire format but is read from the record, so callers only
+// supply the position/trade id. Editing or deleting a record rewrites a client's book and P/L, so
+// both are gated behind the repo's confirm-before-execute plan/commit pattern.
+
+type BookRecord = Record<string, unknown>;
+
+// friendly parameter name -> terse wire key
+const POSITION_FIELD_MAP: Record<string, string> = {
+  quantity: "q",
+  openPrice: "p",
+  swaps: "sw",
+  commission: "c",
+  fees: "f",
+};
+const TRADE_FIELD_MAP: Record<string, string> = {
+  price: "p",
+  quantity: "q",
+  profit: "pl",
+  swaps: "sw",
+  commission: "c",
+  fees: "f",
+};
+
+function buildSparseUpdate(
+  current: BookRecord,
+  updates: Record<string, unknown>,
+  map: Record<string, string>,
+) {
+  const body: BookRecord = { id: current.id, A: current.A };
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  for (const [friendly, wire] of Object.entries(map)) {
+    const value = updates[friendly];
+    if (value === undefined) continue;
+    body[wire] = value;
+    if (current[wire] !== value) changes[friendly] = { from: current[wire], to: value };
+  }
+  return { body, changes };
+}
+
+export const getPositionSchema = z.object({
+  positionId: z.number().describe("Position unique identifier (from get_open_positions)"),
+});
+
+export async function getPosition(client: RestClient, params: z.infer<typeof getPositionSchema>) {
+  return client.get(`/admin/positions/get/${params.positionId}`);
+}
+
+export const getTradeSchema = z.object({
+  tradeId: z.number().describe("Trade unique identifier (from get_trade_history)"),
+});
+
+export async function getTrade(client: RestClient, params: z.infer<typeof getTradeSchema>) {
+  return client.get(`/admin/trades/get/${params.tradeId}`);
+}
+
+export const updatePositionPlanSchema = z.object({
+  positionId: z.number().describe("Position to correct (from get_open_positions)"),
+  quantity: z.number().optional().describe("Volume in lots"),
+  openPrice: z.number().optional().describe("Volume-weighted average open price (VWAP)"),
+  swaps: z.number().optional().describe("Accrued swaps"),
+  commission: z.number().optional().describe("Commission"),
+  fees: z.number().optional().describe("Fees"),
+});
+const UPDATE_POSITION_DISCLOSURE =
+  "You are confirming a LIVE correction to an open position on a client account via an AI assistant. This changes the client's book and P/L. Review the diff, then call update_position_commit with this commitToken. Nothing is written until you commit.";
+
+export async function updatePositionPlan(
+  client: RestClient,
+  params: z.infer<typeof updatePositionPlanSchema>,
+) {
+  const current = (await client.get(`/admin/positions/get/${params.positionId}`)) as BookRecord;
+  const { body, changes } = buildSparseUpdate(current, params, POSITION_FIELD_MAP);
+  if (Object.keys(changes).length === 0) {
+    return {
+      positionId: params.positionId,
+      noChanges: true,
+      message: "No field was supplied with a value different from the position's current one.",
+    };
+  }
+  return {
+    positionId: params.positionId,
+    account: current.A,
+    symbol: current.s,
+    changes,
+    commitToken: issuePlan(body, "update_position"),
+    disclosure: UPDATE_POSITION_DISCLOSURE,
+  };
+}
+
+export const updatePositionCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by update_position_plan"),
+});
+
+export async function updatePositionCommit(
+  client: RestClient,
+  params: z.infer<typeof updatePositionCommitSchema>,
+) {
+  return client.post(
+    "/admin/positions/edit",
+    takeCommit(params.commitToken, "update_position"),
+    NO_TRANSPORT_RETRY,
+  );
+}
+
+export const deletePositionPlanSchema = z.object({
+  positionId: z.number().describe("Position to delete (from get_open_positions)"),
+});
+const DELETE_POSITION_DISCLOSURE =
+  "You are confirming the LIVE DELETION of an open position from a client account via an AI assistant. The position is removed from the client's book. Review the target, then call delete_position_commit with this commitToken. Nothing is deleted until you commit.";
+
+export async function deletePositionPlan(
+  client: RestClient,
+  params: z.infer<typeof deletePositionPlanSchema>,
+) {
+  const current = (await client.get(`/admin/positions/get/${params.positionId}`)) as BookRecord;
+  return {
+    willDelete: {
+      positionId: current.id,
+      account: current.A,
+      symbol: current.s,
+      side: current.S,
+      quantity: current.q,
+      openPrice: current.p,
+      unrealizedPl: current.pl,
+    },
+    commitToken: issuePlan({ id: current.id, A: current.A }, "delete_position"),
+    disclosure: DELETE_POSITION_DISCLOSURE,
+  };
+}
+
+export const deletePositionCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by delete_position_plan"),
+});
+
+export async function deletePositionCommit(
+  client: RestClient,
+  params: z.infer<typeof deletePositionCommitSchema>,
+) {
+  return client.post(
+    "/admin/positions/delete",
+    takeCommit(params.commitToken, "delete_position"),
+    NO_TRANSPORT_RETRY,
+  );
+}
+
+export const updateTradePlanSchema = z.object({
+  tradeId: z.number().describe("Trade to correct (from get_trade_history)"),
+  price: z.number().optional().describe("Execution price"),
+  quantity: z.number().optional().describe("Volume in lots"),
+  profit: z.number().optional().describe("Realized profit/loss"),
+  swaps: z.number().optional().describe("Swaps"),
+  commission: z.number().optional().describe("Commission"),
+  fees: z.number().optional().describe("Fees"),
+});
+const UPDATE_TRADE_DISCLOSURE =
+  "You are confirming a LIVE correction to an executed trade on a client account via an AI assistant. This rewrites trade history and the client's realized P/L. Review the diff, then call update_trade_commit with this commitToken. Nothing is written until you commit.";
+
+export async function updateTradePlan(
+  client: RestClient,
+  params: z.infer<typeof updateTradePlanSchema>,
+) {
+  const current = (await client.get(`/admin/trades/get/${params.tradeId}`)) as BookRecord;
+  const { body, changes } = buildSparseUpdate(current, params, TRADE_FIELD_MAP);
+  if (Object.keys(changes).length === 0) {
+    return {
+      tradeId: params.tradeId,
+      noChanges: true,
+      message: "No field was supplied with a value different from the trade's current one.",
+    };
+  }
+  return {
+    tradeId: params.tradeId,
+    account: current.A,
+    symbol: current.s,
+    changes,
+    commitToken: issuePlan(body, "update_trade"),
+    disclosure: UPDATE_TRADE_DISCLOSURE,
+  };
+}
+
+export const updateTradeCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by update_trade_plan"),
+});
+
+export async function updateTradeCommit(
+  client: RestClient,
+  params: z.infer<typeof updateTradeCommitSchema>,
+) {
+  return client.post(
+    "/admin/trades/edit",
+    takeCommit(params.commitToken, "update_trade"),
+    NO_TRANSPORT_RETRY,
+  );
+}
+
+export const deleteTradePlanSchema = z.object({
+  tradeId: z.number().describe("Trade to delete (from get_trade_history)"),
+});
+const DELETE_TRADE_DISCLOSURE =
+  "You are confirming the LIVE DELETION of an executed trade from a client account via an AI assistant. This rewrites trade history. Review the target, then call delete_trade_commit with this commitToken. Nothing is deleted until you commit.";
+
+export async function deleteTradePlan(
+  client: RestClient,
+  params: z.infer<typeof deleteTradePlanSchema>,
+) {
+  const current = (await client.get(`/admin/trades/get/${params.tradeId}`)) as BookRecord;
+  return {
+    willDelete: {
+      tradeId: current.id,
+      account: current.A,
+      symbol: current.s,
+      quantity: current.q,
+      price: current.p,
+      profit: current.pl,
+    },
+    commitToken: issuePlan({ id: current.id, A: current.A }, "delete_trade"),
+    disclosure: DELETE_TRADE_DISCLOSURE,
+  };
+}
+
+export const deleteTradeCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by delete_trade_plan"),
+});
+
+export async function deleteTradeCommit(
+  client: RestClient,
+  params: z.infer<typeof deleteTradeCommitSchema>,
+) {
+  return client.post(
+    "/admin/trades/delete",
+    takeCommit(params.commitToken, "delete_trade"),
+    NO_TRANSPORT_RETRY,
+  );
+}

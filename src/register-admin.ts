@@ -47,6 +47,26 @@ import {
   getWorkingOrder,
   getHistoricalOrderSchema,
   getHistoricalOrder,
+  getPositionSchema,
+  getPosition,
+  getTradeSchema,
+  getTrade,
+  updatePositionPlanSchema,
+  updatePositionPlan,
+  updatePositionCommitSchema,
+  updatePositionCommit,
+  deletePositionPlanSchema,
+  deletePositionPlan,
+  deletePositionCommitSchema,
+  deletePositionCommit,
+  updateTradePlanSchema,
+  updateTradePlan,
+  updateTradeCommitSchema,
+  updateTradeCommit,
+  deleteTradePlanSchema,
+  deleteTradePlan,
+  deleteTradeCommitSchema,
+  deleteTradeCommit,
 } from "./tools/admin/trading.js";
 
 import {
@@ -210,6 +230,10 @@ import {
   getEmailServices,
   findClientByExternalIdSchema,
   findClientByExternalId,
+  createManagerPlanSchema,
+  createManagerPlan,
+  createManagerCommitSchema,
+  createManagerCommit,
 } from "./tools/admin/config.js";
 
 export function registerAdminTools(
@@ -991,6 +1015,121 @@ export function registerAdminTools(
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     toolHandler((params) => updateSymbolCommit(restClient, params)),
+  );
+
+  // === POSITION / TRADE RECORD MAINTENANCE ===
+
+  server.tool(
+    "get_position",
+    "Get ONE open position by its ID, with symbol, side, volume, open price and unrealized P/L. For a list, use get_open_positions.",
+    getPositionSchema.shape,
+    toolHandler((params) => getPosition(restClient, params)),
+  );
+  server.tool(
+    "get_trade",
+    "Get ONE executed trade by its ID. For a list, use get_trade_history.",
+    getTradeSchema.shape,
+    toolHandler((params) => getTrade(restClient, params)),
+  );
+  server.registerTool(
+    "update_position_plan",
+    {
+      description:
+        "STEP 1 of correcting an open position's record (volume, open price, swaps, commission, fees) — preview WITHOUT writing. Reads the position by ID, returns a field-by-field diff plus a commitToken. This is a back-office correction, NOT a way to close or trade: use close_position_plan to close. Only after the user confirms, call update_position_commit.",
+      inputSchema: updatePositionPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updatePositionPlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_position_commit",
+    {
+      description:
+        "STEP 2 — apply the position correction previewed by update_position_plan. Requires its commitToken. Rewrites a LIVE client position and its P/L via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updatePositionCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updatePositionCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_position_plan",
+    {
+      description:
+        "STEP 1 of deleting an open position from a client's book — preview WITHOUT deleting. Reads the position and returns what will be removed plus a commitToken. This ERASES the position rather than closing it (use close_position_plan to close at market). Only after the user confirms, call delete_position_commit.",
+      inputSchema: deletePositionPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deletePositionPlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_position_commit",
+    {
+      description:
+        "STEP 2 — delete the position previewed by delete_position_plan. Requires its commitToken. Permanently removes a LIVE client position via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deletePositionCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deletePositionCommit(restClient, params)),
+  );
+  server.registerTool(
+    "update_trade_plan",
+    {
+      description:
+        "STEP 1 of correcting an executed trade's record (price, volume, realized profit, swaps, commission, fees) — preview WITHOUT writing. Reads the trade by ID and returns a diff plus a commitToken. Only after the user confirms, call update_trade_commit.",
+      inputSchema: updateTradePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateTradePlan(restClient, params)),
+  );
+  server.registerTool(
+    "update_trade_commit",
+    {
+      description:
+        "STEP 2 — apply the trade correction previewed by update_trade_plan. Requires its commitToken. Rewrites LIVE trade history and realized P/L via an AI assistant — only after explicit user confirmation.",
+      inputSchema: updateTradeCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => updateTradeCommit(restClient, params)),
+  );
+  server.registerTool(
+    "delete_trade_plan",
+    {
+      description:
+        "STEP 1 of deleting an executed trade from history — preview WITHOUT deleting. Reads the trade and returns what will be removed plus a commitToken. Only after the user confirms, call delete_trade_commit.",
+      inputSchema: deleteTradePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteTradePlan(restClient, params)),
+  );
+  server.registerTool(
+    "delete_trade_commit",
+    {
+      description:
+        "STEP 2 — delete the trade previewed by delete_trade_plan. Requires its commitToken. Permanently rewrites LIVE trade history via an AI assistant — only after explicit user confirmation.",
+      inputSchema: deleteTradeCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => deleteTradeCommit(restClient, params)),
+  );
+  server.registerTool(
+    "create_manager_plan",
+    {
+      description:
+        "STEP 1 of granting manager (admin) permissions to a trading account — preview WITHOUT writing. Optionally copy an existing manager's permissions via fromId, then set `permissions` flags. Returns the manager record that will be created plus a commitToken. Use update_manager_plan to change an EXISTING manager. Only after the user confirms, call create_manager_commit.",
+      inputSchema: createManagerPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createManagerPlan(restClient, params)),
+  );
+  server.registerTool(
+    "create_manager_commit",
+    {
+      description:
+        "STEP 2 — create the manager previewed by create_manager_plan. Requires its commitToken. Grants LIVE server-wide admin permissions via an AI assistant — only after explicit user confirmation.",
+      inputSchema: createManagerCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => createManagerCommit(restClient, params)),
   );
 
   // === REPORTING / LOOKUPS (read-only) ===

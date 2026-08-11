@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Trading calendar & manager admin (admin):** holidays (`get_holidays`, `get_holiday`, `update_holiday_*`, `delete_holiday_*`), managers (`get_managers`, `get_manager`, `get_manager_self`, `update_manager_*`, `delete_manager_*`), and `get_tokens` (list issued API tokens).
 - **Create flows (admin):** `create_symbol_*`, `create_group_*`, `create_holiday_*`, `create_client_*`, `create_account_*` — clone an existing resource as a template (`fromId`) and/or pass a full `object`, apply `overrides`, and create it (id/version forced to 0, no If-Match) through the confirm-before-write plan/commit. A new trading account requires a user-supplied `password`.
 - **Reporting and lookups (admin, read-only):** `get_journal` (server audit journal by time range, severity and message mask), `get_statements` (daily/monthly statements), `get_email_services`, `find_client_by_external_id`, `get_margin_call_accounts`, `get_transfer` (single transfer), `get_working_order` / `get_historical_order` (single order by ID), and `get_conversion_rates_batch`. Account-scoped tools take one of `accounts` / `groups` / `groupMasks`.
-- Admin tool count 42 → 98.
+- **Position and trade record maintenance (admin):** `get_position`, `get_trade`, and confirm-before-write `update_position_*` / `delete_position_*` / `update_trade_*` / `delete_trade_*` for back-office corrections. These endpoints take a sparse `{ id, account, …changed }` update with no ETag concurrency, and their commits opt out of transport retries so a correction cannot be applied twice.
+- **`create_manager_plan` / `create_manager_commit` (admin):** grant manager permissions to an account, optionally copying an existing manager via `fromId`. Previously only existing managers could be edited.
+- Admin tool count 42 → 110.
 
 ### Changed
 

@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-98-tools)** — 98 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-110-tools)** — 110 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -606,13 +606,13 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (98 tools)
+## Admin mode (110 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
 the persona guide.
 
-### Trading (21 tools)
+### Trading (31 tools)
 
 The four money-movers — placing an order, closing a position, a hedged close, and closing
 everything — are **confirm-before-execute**: each is a `*_plan` + `*_commit` pair. The `*_plan`
@@ -1268,7 +1268,7 @@ Example:
 }
 ```
 
-### Configuration (59 tools)
+### Configuration (61 tools)
 
 #### `get_groups`
 
@@ -1474,7 +1474,7 @@ written until you commit. Field names in `updates`/`overrides` are exactly those
 | **Clients** | `get_clients`, `get_client` | `create_client_plan/commit` | `update_client_plan/commit` | `delete_client_plan/commit` |
 | **Liquidity connectors** | `get_liquidity_connectors`, `get_liquidity_connector` | — | `update_liquidity_connector_plan/commit` | `delete_liquidity_connector_plan/commit` |
 | **Holidays** (trading calendar) | `get_holidays`, `get_holiday` | `create_holiday_plan/commit` | `update_holiday_plan/commit` | `delete_holiday_plan/commit` |
-| **Managers** | `get_managers`, `get_manager`, `get_manager_self` | via `update_manager` (id 0) | `update_manager_plan/commit` | `delete_manager_plan/commit` |
+| **Managers** | `get_managers`, `get_manager`, `get_manager_self` | `create_manager_plan/commit` | `update_manager_plan/commit` | `delete_manager_plan/commit` |
 | **Access tokens** | `get_tokens` | — | — | — |
 
 ¹ A new trading account **requires a `password`** in `overrides`/`object` (supplied by you).
@@ -1488,6 +1488,34 @@ Example — clone `EURUSD` (id 1) into a new `EURGBP`:
 {
   "fromId": 1,
   "overrides": { "name": "EURGBP", "path": "Forex/EURGBP", "description": "Euro vs Pound" }
+}
+```
+
+### Position and trade record maintenance
+
+Back-office corrections to a client's book, for fixing bad data — **not** a way to trade. To close a
+position at market use `close_position_plan`; to cancel an order use `cancel_order`.
+
+| Tool | What it does |
+|---|---|
+| `get_position` / `get_trade` | Read ONE position / trade by ID (lists: `get_open_positions`, `get_trade_history`). |
+| `update_position_plan` / `_commit` | Correct an open position's `quantity`, `openPrice`, `swaps`, `commission`, `fees`. |
+| `delete_position_plan` / `_commit` | **Erase** a position from the book (it is not closed — nothing is executed). |
+| `update_trade_plan` / `_commit` | Correct an executed trade's `price`, `quantity`, `profit`, `swaps`, `commission`, `fees`. |
+| `delete_trade_plan` / `_commit` | Erase a trade from history. |
+
+Each `*_plan` takes the record ID plus the fields to change and returns a field-by-field diff and a
+`commitToken`; each `*_commit` takes only `{ commitToken }`. Only the fields you supply are sent —
+the request is a sparse update (`{ id, account, …changed }`), so untouched values are never
+rewritten. These endpoints carry no ETag concurrency, and the commit is never retried on a
+connection error (a correction must not be applied twice).
+
+Example — correct the accrued swaps on a position:
+
+```json
+{
+  "positionId": 476797305095829,
+  "swaps": -7.5
 }
 ```
 
