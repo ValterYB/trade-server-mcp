@@ -152,3 +152,44 @@ test("create_manager keys on accountId with version 0 and no If-Match", async ()
   assert.equal(B().accountId, 55);
   assert.equal(B().version, 0);
 });
+
+test("book lookups fall back to the query endpoint when get-by-id is not served (502)", async () => {
+  // Reproduces the live behaviour: /admin/positions/get/{id} answers 502 for every id, while
+  // /admin/positions/query returns the record.
+  globalThis.fetch = (async (url: any, init: any) => {
+    const u = String(url);
+    captured.push({
+      url: u,
+      method: init?.method ?? "GET",
+      body: init?.body,
+      headers: (init?.headers ?? {}) as Record<string, string>,
+    });
+    if (u.includes("/positions/get/")) return new Response("Bad Gateway", { status: 502 });
+    return new Response(JSON.stringify({ positions: [POSITION] }), { status: 200 });
+  }) as any;
+
+  const plan = (await trd.updatePositionPlan(client(), {
+    positionId: POSITION.id,
+    accountId: 2,
+    swaps: -8,
+  })) as { commitToken: string; changes: Record<string, unknown> };
+
+  assert.ok(captured[0].url.includes("/admin/positions/get/")); // documented route tried first
+  assert.equal(captured[1].url, "http://ts/api/v1/admin/positions/query"); // then the fallback
+  assert.deepEqual(JSON.parse(captured[1].body!), { A: 2 }); // narrowed by account
+  assert.deepEqual(Object.keys(plan.changes), ["swaps"]);
+  assert.ok(plan.commitToken);
+});
+
+test("book lookup surfaces a clear error when neither route yields the record", async () => {
+  globalThis.fetch = (async (url: any) => {
+    const u = String(url);
+    if (u.includes("/trades/get/")) return new Response("Bad Gateway", { status: 502 });
+    return new Response(JSON.stringify({ trades: [] }), { status: 200 });
+  }) as any;
+
+  await assert.rejects(
+    () => trd.getTrade(client(), { tradeId: 424242 }),
+    /No trade with id 424242 was found/,
+  );
+});

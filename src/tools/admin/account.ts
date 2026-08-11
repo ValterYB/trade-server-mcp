@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
 import { accountFilterSchema, buildAccountFilter } from "./filters.js";
+import { fetchRecord } from "./lookup.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 import { completenessMessage } from "../../validation.js";
 
@@ -176,10 +177,26 @@ export async function getBalances(client: RestClient) {
 
 export const getTransferSchema = z.object({
   transferId: z.number().describe("Transfer unique identifier (from get_transfer_history)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
 });
 
 export async function getTransfer(client: RestClient, params: z.infer<typeof getTransferSchema>) {
-  return client.get(`/admin/transfers/get/${params.transferId}`);
+  return fetchRecord(
+    client,
+    {
+      label: "transfer",
+      getPath: `/admin/transfers/get/${params.transferId}`,
+      queryPath: "/admin/transfers/query",
+      queryBody: params.accountId === undefined ? {} : { A: params.accountId },
+      collectionKey: "transfers",
+    },
+    params.transferId,
+  );
 }
 
 export const getMarginCallAccountsSchema = z.object({

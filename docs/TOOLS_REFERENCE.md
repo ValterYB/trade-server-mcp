@@ -1504,6 +1504,8 @@ position at market use `close_position_plan`; to cancel an order use `cancel_ord
 | `update_trade_plan` / `_commit` | Correct an executed trade's `price`, `quantity`, `profit`, `swaps`, `commission`, `fees`. |
 | `delete_trade_plan` / `_commit` | Erase a trade from history. |
 
+All of these accept an optional `accountId`. The tools read the record from `GET /admin/<res>/get/{id}` when the server serves it and otherwise fall back to the matching `/query` endpoint — `accountId` narrows that fallback and may be required for older records.
+
 Each `*_plan` takes the record ID plus the fields to change and returns a field-by-field diff and a
 `commitToken`; each `*_commit` takes only `{ commitToken }`. Only the fields you supply are sent —
 the request is a sparse update (`{ id, account, …changed }`), so untouched values are never

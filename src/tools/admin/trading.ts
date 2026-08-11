@@ -3,6 +3,7 @@ import { RestClient } from "../../rest-client.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 import { buildOrderPreview } from "../../preview/order-preview.js";
 import { completenessMessage, orderPriceCompleteness } from "../../validation.js";
+import { fetchRecord } from "./lookup.js";
 
 // Order placement is non-idempotent: a connection reset does not prove the
 // server never received the order, so a transport-level retry could fill twice.
@@ -677,6 +678,21 @@ export async function getHistoricalOrder(
 
 type BookRecord = Record<string, unknown>;
 
+const positionSpec = (id: number, accountId?: number) => ({
+  label: "position",
+  getPath: `/admin/positions/get/${id}`,
+  queryPath: "/admin/positions/query",
+  queryBody: accountId === undefined ? {} : { A: accountId },
+  collectionKey: "positions",
+});
+const tradeSpec = (id: number, accountId?: number) => ({
+  label: "trade",
+  getPath: `/admin/trades/get/${id}`,
+  queryPath: "/admin/trades/query",
+  queryBody: accountId === undefined ? {} : { A: accountId },
+  collectionKey: "trades",
+});
+
 // friendly parameter name -> terse wire key
 const POSITION_FIELD_MAP: Record<string, string> = {
   quantity: "q",
@@ -712,22 +728,40 @@ function buildSparseUpdate(
 
 export const getPositionSchema = z.object({
   positionId: z.number().describe("Position unique identifier (from get_open_positions)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
 });
 
 export async function getPosition(client: RestClient, params: z.infer<typeof getPositionSchema>) {
-  return client.get(`/admin/positions/get/${params.positionId}`);
+  return fetchRecord(client, positionSpec(params.positionId, params.accountId), params.positionId);
 }
 
 export const getTradeSchema = z.object({
   tradeId: z.number().describe("Trade unique identifier (from get_trade_history)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
 });
 
 export async function getTrade(client: RestClient, params: z.infer<typeof getTradeSchema>) {
-  return client.get(`/admin/trades/get/${params.tradeId}`);
+  return fetchRecord(client, tradeSpec(params.tradeId, params.accountId), params.tradeId);
 }
 
 export const updatePositionPlanSchema = z.object({
   positionId: z.number().describe("Position to correct (from get_open_positions)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
   quantity: z.number().optional().describe("Volume in lots"),
   openPrice: z.number().optional().describe("Volume-weighted average open price (VWAP)"),
   swaps: z.number().optional().describe("Accrued swaps"),
@@ -741,7 +775,11 @@ export async function updatePositionPlan(
   client: RestClient,
   params: z.infer<typeof updatePositionPlanSchema>,
 ) {
-  const current = (await client.get(`/admin/positions/get/${params.positionId}`)) as BookRecord;
+  const current = await fetchRecord(
+    client,
+    positionSpec(params.positionId, params.accountId),
+    params.positionId,
+  );
   const { body, changes } = buildSparseUpdate(current, params, POSITION_FIELD_MAP);
   if (Object.keys(changes).length === 0) {
     return {
@@ -777,6 +815,12 @@ export async function updatePositionCommit(
 
 export const deletePositionPlanSchema = z.object({
   positionId: z.number().describe("Position to delete (from get_open_positions)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
 });
 const DELETE_POSITION_DISCLOSURE =
   "You are confirming the LIVE DELETION of an open position from a client account via an AI assistant. The position is removed from the client's book. Review the target, then call delete_position_commit with this commitToken. Nothing is deleted until you commit.";
@@ -785,7 +829,11 @@ export async function deletePositionPlan(
   client: RestClient,
   params: z.infer<typeof deletePositionPlanSchema>,
 ) {
-  const current = (await client.get(`/admin/positions/get/${params.positionId}`)) as BookRecord;
+  const current = await fetchRecord(
+    client,
+    positionSpec(params.positionId, params.accountId),
+    params.positionId,
+  );
   return {
     willDelete: {
       positionId: current.id,
@@ -818,6 +866,12 @@ export async function deletePositionCommit(
 
 export const updateTradePlanSchema = z.object({
   tradeId: z.number().describe("Trade to correct (from get_trade_history)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
   price: z.number().optional().describe("Execution price"),
   quantity: z.number().optional().describe("Volume in lots"),
   profit: z.number().optional().describe("Realized profit/loss"),
@@ -832,7 +886,11 @@ export async function updateTradePlan(
   client: RestClient,
   params: z.infer<typeof updateTradePlanSchema>,
 ) {
-  const current = (await client.get(`/admin/trades/get/${params.tradeId}`)) as BookRecord;
+  const current = await fetchRecord(
+    client,
+    tradeSpec(params.tradeId, params.accountId),
+    params.tradeId,
+  );
   const { body, changes } = buildSparseUpdate(current, params, TRADE_FIELD_MAP);
   if (Object.keys(changes).length === 0) {
     return {
@@ -868,6 +926,12 @@ export async function updateTradeCommit(
 
 export const deleteTradePlanSchema = z.object({
   tradeId: z.number().describe("Trade to delete (from get_trade_history)"),
+  accountId: z
+    .number()
+    .optional()
+    .describe(
+      "Owning account ID — narrows the lookup and is required on servers that do not serve get-by-id",
+    ),
 });
 const DELETE_TRADE_DISCLOSURE =
   "You are confirming the LIVE DELETION of an executed trade from a client account via an AI assistant. This rewrites trade history. Review the target, then call delete_trade_commit with this commitToken. Nothing is deleted until you commit.";
@@ -876,7 +940,11 @@ export async function deleteTradePlan(
   client: RestClient,
   params: z.infer<typeof deleteTradePlanSchema>,
 ) {
-  const current = (await client.get(`/admin/trades/get/${params.tradeId}`)) as BookRecord;
+  const current = await fetchRecord(
+    client,
+    tradeSpec(params.tradeId, params.accountId),
+    params.tradeId,
+  );
   return {
     willDelete: {
       tradeId: current.id,
