@@ -132,7 +132,7 @@ test("update_group_plan reads /admin/groups/get/{id}, update_group_commit edits 
 
 test("delete_group_plan previews the target; delete_group_commit posts {groupId,version} with If-Match", async () => {
   respond = () => GROUP;
-  const plan = (await cfg.deleteGroupPlan(client(), { groupId: 2 })) as {
+  const plan = (await cfg.deleteGroupPlan(client(), { groupId: 2 })) as unknown as {
     commitToken: string;
     willDelete: { groupId: number; name: string; version: number };
   };

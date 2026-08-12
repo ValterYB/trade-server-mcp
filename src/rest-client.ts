@@ -112,7 +112,7 @@ export class RestClient {
     }
   }
 
-  private async doGet<T>(path: string): Promise<T> {
+  private async doGet<T>(path: string): Promise<{ data: T; etag: string | null }> {
     const url = `${this.baseUrl}/api/v1${path}`;
     const headers = this.buildHeaders("GET");
 
@@ -140,7 +140,10 @@ export class RestClient {
         this.etags.set(path, newEtag);
       }
 
-      return (await res.json()) as T;
+      // The ETag is returned alongside the body so callers can pair a version with the exact
+      // response it came from. Reading it back out of the per-path cache instead leaves a window
+      // where a concurrent read of the same resource overwrites it between the two steps.
+      return { data: (await res.json()) as T, etag: newEtag };
     } catch (err) {
       if (this.isTimeout(err)) throw this.timeoutApiError("GET", path);
       throw err;
@@ -243,6 +246,15 @@ export class RestClient {
   }
 
   async get<T = unknown>(path: string): Promise<T> {
+    return (await this.withAuthRetry(() => this.doGet<T>(path))).data;
+  }
+
+  /**
+   * Like get(), but also returns the ETag carried by that exact response. Use this when the value
+   * will be written back with If-Match: it ties the version to the body it was read with, instead
+   * of to whatever the shared per-path cache happens to hold by the time the write is prepared.
+   */
+  async getWithEtag<T = unknown>(path: string): Promise<{ data: T; etag: string | null }> {
     return this.withAuthRetry(() => this.doGet<T>(path));
   }
 

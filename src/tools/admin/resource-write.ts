@@ -1,4 +1,4 @@
-// Generic read-modify-write (edit) and delete helpers for admin config resources.
+// Generic read-modify-write (edit), create and delete helpers for admin config resources.
 //
 // Every admin resource (symbols, groups, accounts, clients, liquidity connectors, …) shares one
 // write contract, confirmed against the admin SDK:
@@ -6,7 +6,7 @@
 //     guarded by If-Match (ETag == the resource version).
 //   - POST /admin/<res>/delete — body = { <res>Id, version }, also guarded by If-Match.
 // RestClient keys ETags by request path, and the GET path differs from the write path, so the
-// captured ETag is bridged onto the write path here (setEtag) before the POST.
+// ETag captured with the read is carried onto the write here.
 //
 // These helpers back the per-resource, task-shaped tools (update_<res>_plan/commit,
 // delete_<res>_plan/commit) — the tool names, schemas, and descriptions stay hand-written.
@@ -16,23 +16,39 @@ import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 
 type Rec = Record<string, unknown>;
 
-const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** Deep-equal by canonical JSON — sufficient for the plain data an admin record is built from. */
+export const sameValue = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
 
-// Fields the server assigns itself; echoing them back on an /edit is rejected as "Invalid body"
-// (seen live on clients and trading accounts, whose read model carries them).
-const SERVER_MANAGED = ["timeCreated", "timeModified"];
+// Fields the server assigns itself. The API marks them read-only and rejects a write that echoes
+// them back ("Invalid body"), so they are removed before every write. Only clients and trading
+// accounts actually carry them (trading accounts also carry timePasswordLastChanged); stripping is
+// a no-op for the other resources.
+const SERVER_MANAGED = ["timeCreated", "timeModified", "timePasswordLastChanged"];
+
 export function stripServerManaged(o: Rec): Rec {
   const r = { ...o };
   for (const k of SERVER_MANAGED) delete r[k];
   return r;
 }
 
-// Unconditional read: clear any ETag cached for this path first, so a repeated GET of the same
-// resource returns 200 with a fresh ETag instead of 304 (RestClient sends If-None-Match and throws
-// on 304). The fresh ETag is what the subsequent write sends as If-Match.
+/**
+ * Read a record together with the ETag of that exact response.
+ *
+ * The ETag is taken from the response itself rather than from RestClient's per-path cache: two
+ * concurrent plans for the same resource would otherwise race, and one could pair its body with
+ * the other's version — silently defeating the If-Match conflict check.
+ */
+export async function readWithEtag(
+  client: RestClient,
+  path: string,
+): Promise<{ data: Rec; etag: string | null }> {
+  return client.getWithEtag<Rec>(path);
+}
+
+/** Back-compat read helper for callers that only need the body. */
 export async function readFresh(client: RestClient, path: string): Promise<Rec> {
-  client.setEtag(path, "");
-  return client.get<Rec>(path);
+  return (await readWithEtag(client, path)).data;
 }
 
 export interface ResourceSpec {
@@ -50,7 +66,13 @@ export interface ResourceSpec {
   nameKey?: string;
 }
 
-/** Preview an edit: read current, apply a partial overlay, diff, stash for commit. */
+/**
+ * Preview an edit: read current, apply a partial overlay, diff, stash for commit.
+ *
+ * The diff is built from the object that will ACTUALLY be sent (after read-only fields are
+ * stripped), so the preview can never approve a change that the write silently drops. Any update
+ * aimed at a read-only field is reported back as ignored instead of vanishing.
+ */
 export async function planResourceEdit(
   client: RestClient,
   spec: ResourceSpec,
@@ -58,36 +80,46 @@ export async function planResourceEdit(
   updates: Rec,
   tool: string,
 ) {
-  const current = await readFresh(client, spec.getPath(id));
-  const next: Rec = { ...current, ...updates };
+  const { data: current, etag } = await readWithEtag(client, spec.getPath(id));
+  const object = stripServerManaged({ ...current, ...updates });
 
+  const ignored = Object.keys(updates).filter((k) => !(k in object));
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   for (const key of Object.keys(updates)) {
-    if (!sameValue(current[key], next[key])) changes[key] = { from: current[key], to: next[key] };
+    if (ignored.includes(key)) continue;
+    if (!sameValue(current[key], object[key])) {
+      changes[key] = { from: current[key], to: object[key] };
+    }
   }
 
   const name = spec.nameKey ? current[spec.nameKey] : undefined;
+  const ignoredNote =
+    ignored.length > 0
+      ? {
+          ignoredReadOnlyFields: ignored,
+          note: `The server assigns ${ignored.join(", ")} itself and rejects a write that sets them, so they are not part of this change.`,
+        }
+      : {};
+
   if (Object.keys(changes).length === 0) {
     return {
       resource: spec.label,
       id,
       ...(name !== undefined ? { name } : {}),
       noChanges: true,
+      ...ignoredNote,
       message: `The requested values already match the ${spec.label}'s current configuration.`,
     };
   }
 
-  const etag = client.getEtag(spec.getPath(id));
-  const commitToken = issuePlan(
-    { path: spec.editPath, object: stripServerManaged(next), etag },
-    tool,
-  );
+  const commitToken = issuePlan({ path: spec.editPath, object, etag }, tool);
   return {
     resource: spec.label,
     id,
     ...(name !== undefined ? { name } : {}),
     version: current.version,
     changes,
+    ...ignoredNote,
     commitToken,
     disclosure: `You are confirming a LIVE change to a ${spec.label}'s server-wide configuration via an AI assistant. Review the diff, then call the matching *_commit with this commitToken. Nothing is written until you commit.`,
   };
@@ -100,8 +132,7 @@ export async function planResourceDelete(
   id: number,
   tool: string,
 ) {
-  const current = await readFresh(client, spec.getPath(id));
-  const etag = client.getEtag(spec.getPath(id));
+  const { data: current, etag } = await readWithEtag(client, spec.getPath(id));
   const body: Rec = { [spec.idKey]: id, version: current.version };
   const commitToken = issuePlan({ path: spec.deletePath, body, etag }, tool);
   return {
@@ -119,8 +150,10 @@ export async function planResourceDelete(
 /**
  * Preview a create: build a new object (cloned from a template id and/or a provided object, with
  * overrides applied) with id/version forced to 0, and stash it for commit. Creates carry NO
- * If-Match (a new resource has no version to match) — commitResourceWrite clears any stale ETag
- * cached on the edit path from a prior update.
+ * If-Match (a new resource has no version to match).
+ *
+ * `willCreate` is the stripped object — the exact body that will be posted — so a clone cannot
+ * show fields in the preview that the created record will not have.
  */
 export async function planResourceCreate(
   client: RestClient,
@@ -130,12 +163,12 @@ export async function planResourceCreate(
 ) {
   const base =
     opts.fromId != null ? await readFresh(client, spec.getPath(opts.fromId)) : (opts.object ?? {});
-  const next: Rec = { ...base, ...(opts.overrides ?? {}), id: 0, version: 0 };
-  const commitToken = issuePlan({ path: spec.editPath, object: stripServerManaged(next) }, tool); // no etag → no If-Match
+  const object = stripServerManaged({ ...base, ...(opts.overrides ?? {}), id: 0, version: 0 });
+  const commitToken = issuePlan({ path: spec.editPath, object }, tool); // no etag → no If-Match
   return {
     resource: spec.label,
     action: "create",
-    willCreate: next,
+    willCreate: object,
     commitToken,
     disclosure: `You are confirming the LIVE CREATION of a new ${spec.label} via an AI assistant. Review the object, then call the matching *_commit with this commitToken. Nothing is written until you commit.`,
   };
@@ -143,17 +176,46 @@ export async function planResourceCreate(
 
 /**
  * Apply an edit, delete, or create previewed above. Single-use token consumption (takeCommit)
- * makes a retried commit unable to re-apply a stale write. For updates/deletes the captured ETag
- * is sent as If-Match; for creates (no ETag) any stale ETag cached on the path is cleared so no
- * If-Match leaks onto the new-resource write.
+ * makes a retried commit unable to re-apply a stale write.
+ *
+ * The ETag is ALWAYS written to the path — set to the stashed value for updates/deletes, cleared
+ * for creates. Leaving a previous write's ETag in place would send someone else's version as
+ * If-Match, which either fails confusingly or defeats the conflict check outright.
  */
 export async function commitResourceWrite(client: RestClient, commitToken: string, tool: string) {
   const plan = takeCommit(commitToken, tool) as {
     path: string;
     object?: Rec;
     body?: Rec;
-    etag?: string;
+    etag?: string | null;
   };
   client.setEtag(plan.path, plan.etag ?? "");
   return client.post(plan.path, plan.object ?? plan.body ?? {});
+}
+
+/**
+ * Build the plan/commit pair for one resource from its spec.
+ *
+ * Every resource used to repeat the same ~35 lines of wrappers; generating them means a change to
+ * shared behaviour (a disclosure wording, a new read-only field, an ETag fix) lands everywhere at
+ * once instead of needing seven edits.
+ */
+export function makeResourceTools(
+  spec: ResourceSpec,
+  tools: { update: string; delete: string; create?: string },
+) {
+  return {
+    planEdit: (client: RestClient, id: number, updates: Rec) =>
+      planResourceEdit(client, spec, id, updates, tools.update),
+    commitEdit: (client: RestClient, commitToken: string) =>
+      commitResourceWrite(client, commitToken, tools.update),
+    planDelete: (client: RestClient, id: number) =>
+      planResourceDelete(client, spec, id, tools.delete),
+    commitDelete: (client: RestClient, commitToken: string) =>
+      commitResourceWrite(client, commitToken, tools.delete),
+    planCreate: (client: RestClient, opts: { fromId?: number; object?: Rec; overrides?: Rec }) =>
+      planResourceCreate(client, spec, opts, tools.create ?? `create_${spec.idKey}`),
+    commitCreate: (client: RestClient, commitToken: string) =>
+      commitResourceWrite(client, commitToken, tools.create ?? `create_${spec.idKey}`),
+  };
 }

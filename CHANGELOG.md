@@ -26,9 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Symbols and groups now use the shared resource helpers** instead of their own copies of read/diff/write, so a fix to the shared code reaches every resource at once — the divergence was exactly why the ETag bug above existed in only those two paths.
+- **The seven resource CRUD blocks are generated from their specs** by `makeResourceTools` rather than hand-written per resource, and the duplicated `sameValue` helper now lives once in `resource-write.ts`.
 - **License changed from proprietary to Apache-2.0** — the project is now open source under the Apache License, Version 2.0.
 
 ### Fixed
+
+- **A write could inherit a previous write's ETag.** The symbol and group commits set `If-Match` only when the plan had captured an ETag, leaving whatever a prior, unrelated write had cached on the same path. That either failed confusingly or sent a stale version as the conflict check. The ETag is now always written (cleared when there is none) — the behaviour the shared helper already had.
+- **The version could be paired with the wrong response.** Plans read the ETag back out of `RestClient`'s per-path cache after parsing the body, so two concurrent plans for the same resource could swap versions between them and defeat the `If-Match` conflict check. `RestClient.getWithEtag()` now returns the body and the ETag of that exact response together.
+- **`timePasswordLastChanged` was not stripped before writing a trading account.** The spec marks it read-only like `timeCreated`/`timeModified`, so echoing it back is rejected as `Invalid body`. It is now part of the stripped set.
+- **Previews could approve changes that were never sent.** `*_plan` built its diff (and `willCreate`) from the object *before* read-only fields were removed, so an update targeting one of them showed as an approved change and then silently vanished. Diffs and previews are now built from exactly what will be posted, and any update aimed at a read-only field is reported back as `ignoredReadOnlyFields` instead of disappearing.
+- **`stop()` did not stop a renewal that was already in flight.** A failure arriving after `stop()` scheduled another retry, quietly restarting the loop against a connection the caller had closed. `stop()` is now terminal; ordinary refresh cycles use a separate timer reset.
+
 
 - **Order-routing writes could never succeed.** `set_order_routing`, `add_routing_rule` and `remove_routing_rule` post to `/admin/routing/edit`, which always requires `If-Match` — but the ETag only ever arrives on `/admin/routing/query`, and `RestClient` keys ETags by path, so every write failed with `PRECONDITION_FAILED`. The routing tools now carry the ETag from the read onto the write path. Verified live: a rule can now be added, reordered and restored.
 - **A repeated GET of the same resource failed with "Not modified (304)".** `RestClient` sent `If-None-Match` from its ETag cache but never cached response bodies, so a 304 could only ever surface as an error — reading any resource twice in one session (for example reading the routing config before editing it) threw. The conditional header is no longer sent; ETags are still recorded, because writes need them for `If-Match`.

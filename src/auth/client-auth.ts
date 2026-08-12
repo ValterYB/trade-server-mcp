@@ -34,6 +34,10 @@ export class ClientAuth implements CredentialsProvider {
   private expiration = 0;
   private accountId = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  // Set by stop(). A renewal already in flight cannot be cancelled, so its failure handler
+  // checks this before scheduling anything new — otherwise stop() would leave a retry loop
+  // running against a connection the caller believes is closed.
+  private stopped = false;
   private inflight: Promise<void> | null = null;
   private lastAuthFailure: AuthRequestError | null = null;
 
@@ -89,7 +93,19 @@ export class ClientAuth implements CredentialsProvider {
     }
   }
 
+  /**
+   * Terminal: cancels the pending timer AND prevents any in-flight attempt from rescheduling.
+   * A stopped instance stays stopped — the renewal path itself calls authorize(), so resuming on
+   * sign-in would let a failure that is already in flight restart the loop stop() just ended.
+   * Callers that need a live session again construct a new ClientAuth.
+   */
   stop() {
+    this.stopped = true;
+    this.clearTimer();
+  }
+
+  /** Drop the pending timer without ending renewal (used between normal refresh cycles). */
+  private clearTimer() {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -143,7 +159,7 @@ export class ClientAuth implements CredentialsProvider {
   }
 
   private scheduleRefresh() {
-    this.stop();
+    this.clearTimer();
     const msLeft = this.expiration / 1000 - Date.now();
     const delay = Math.min(Math.max(msLeft * 0.8, 5_000), 2 ** 31 - 1);
     this.armRenew(delay, ClientAuth.RETRY_MIN_MS);
@@ -157,7 +173,9 @@ export class ClientAuth implements CredentialsProvider {
    * every request failed (as 502, not 401, on this server) until the process was restarted.
    */
   private armRenew(delayMs: number, retryMs: number) {
+    if (this.stopped) return;
     this.timer = setTimeout(() => {
+      if (this.stopped) return;
       this.refresh().catch(() =>
         this.authorize().catch((err) => {
           console.error(
@@ -165,7 +183,8 @@ export class ClientAuth implements CredentialsProvider {
               err instanceof Error ? err.message : String(err)
             } — retrying in ${Math.round(retryMs / 1000)}s`,
           );
-          this.stop();
+          if (this.stopped) return; // stop() was called while this attempt was in flight
+          this.clearTimer();
           this.armRenew(retryMs, Math.min(retryMs * 2, ClientAuth.RETRY_MAX_MS));
         }),
       );
