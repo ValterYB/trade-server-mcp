@@ -692,14 +692,14 @@ const positionSpec = (id: number, accountId?: number) => ({
   label: "position",
   getPath: `/admin/positions/get/${id}`,
   queryPath: "/admin/positions/query",
-  queryBody: accountId === undefined ? {} : { A: accountId },
+  queryBody: accountId === undefined ? {} : { accountFilter: { accounts: [accountId] } },
   collectionKey: "positions",
 });
 const tradeSpec = (id: number, accountId?: number) => ({
   label: "trade",
   getPath: `/admin/trades/get/${id}`,
   queryPath: "/admin/trades/query",
-  queryBody: accountId === undefined ? {} : { A: accountId },
+  queryBody: accountId === undefined ? {} : { accountFilter: { accounts: [accountId] } },
   collectionKey: "trades",
 });
 

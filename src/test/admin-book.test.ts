@@ -176,7 +176,7 @@ test("book lookups fall back to the query endpoint when get-by-id is not served 
 
   assert.ok(captured[0].url.includes("/admin/positions/get/")); // documented route tried first
   assert.equal(captured[1].url, "http://ts/api/v1/admin/positions/query"); // then the fallback
-  assert.deepEqual(JSON.parse(captured[1].body!), { A: 2 }); // narrowed by account
+  assert.deepEqual(JSON.parse(captured[1].body!), { accountFilter: { accounts: [2] } }); // narrowed
   assert.deepEqual(Object.keys(plan.changes), ["swaps"]);
   assert.ok(plan.commitToken);
 });

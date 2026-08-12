@@ -197,7 +197,8 @@ export async function getTransfer(client: RestClient, params: z.infer<typeof get
       label: "transfer",
       getPath: `/admin/transfers/get/${params.transferId}`,
       queryPath: "/admin/transfers/query",
-      queryBody: params.accountId === undefined ? {} : { A: params.accountId },
+      queryBody:
+        params.accountId === undefined ? {} : { accountFilter: { accounts: [params.accountId] } },
       collectionKey: "transfers",
     },
     params.transferId,
