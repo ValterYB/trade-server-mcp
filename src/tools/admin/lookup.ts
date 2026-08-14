@@ -40,11 +40,13 @@ export async function fetchRecord(client: RestClient, spec: LookupSpec, id: numb
   const found = list.find((r) => Number(r.id) === Number(id));
   if (found) return found;
 
+  const scopedAccount = (spec.queryBody.accountFilter as { accounts?: number[] } | undefined)
+    ?.accounts?.[0];
   throw new Error(
     `No ${spec.label} with id ${id} was found. The server did not serve ${spec.getPath}, and it ` +
       `is not in the ${spec.collectionKey} returned by ${spec.queryPath}` +
-      (spec.queryBody.A === undefined
+      (scopedAccount === undefined
         ? " — pass accountId to narrow the search (older records may fall outside the default page)."
-        : ` for account ${spec.queryBody.A}.`),
+        : ` for account ${scopedAccount}.`),
   );
 }

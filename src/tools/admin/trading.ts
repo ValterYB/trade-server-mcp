@@ -128,14 +128,18 @@ export async function closePosition(
   client: RestClient,
   params: z.infer<typeof closePositionSchema>,
 ) {
-  // Get position details first to know symbol and side
+  // Get position details first to know symbol and side. Scope with accountFilter — a bare
+  // { A } body is silently ignored server-side and would return EVERY account's positions —
+  // and double-check ownership before acting, so a stale/foreign id can never be closed.
   const result = (await client.post("/admin/positions/query", {
-    A: params.accountId,
-  })) as { positions: Array<{ id: number; s: string; S: string; q: number }> };
+    accountFilter: { accounts: [params.accountId] },
+  })) as { positions: Array<{ id: number; A: number; s: string; S: string; q: number }> };
 
-  const position = (result.positions || []).find((p) => p.id === params.positionId);
+  const position = (result.positions || []).find(
+    (p) => p.id === params.positionId && p.A === params.accountId,
+  );
   if (!position) {
-    throw new Error(`Position ${params.positionId} not found`);
+    throw new Error(`Position ${params.positionId} not found on account ${params.accountId}`);
   }
 
   // Place opposite market order to close
@@ -261,12 +265,17 @@ export async function cancelAllOrders(
   client: RestClient,
   params: z.infer<typeof cancelAllOrdersSchema>,
 ) {
-  // Always fetch all orders for the account (server-side symbol filter is unreliable)
-  const result = (await client.post("/admin/orders/active", { A: params.accountId })) as {
-    orders: Array<{ id: number; s: string; st: string }>;
+  // Scope with accountFilter (a bare { A } body is silently ignored server-side and would
+  // return EVERY account's orders); the symbol filter stays client-side.
+  const result = (await client.post("/admin/orders/active", {
+    accountFilter: { accounts: [params.accountId] },
+  })) as {
+    orders: Array<{ id: number; A: number; s: string; st: string }>;
   };
 
-  let orders = result.orders || [];
+  // Ownership belt-and-braces: this loop DELETES every order it sees, so never act on a
+  // record that does not belong to the requested account, whatever the server returned.
+  let orders = (result.orders || []).filter((o) => o.A === params.accountId);
 
   // Client-side symbol filter
   if (params.symbol) {
@@ -307,12 +316,17 @@ export async function closeAllPositions(
   client: RestClient,
   params: z.infer<typeof closeAllPositionsSchema>,
 ) {
-  // Always fetch all positions for the account (server-side symbol filter is unreliable)
-  const result = (await client.post("/admin/positions/query", { A: params.accountId })) as {
-    positions: Array<{ id: number; s: string; S: string; q: number }>;
+  // Scope with accountFilter (a bare { A } body is silently ignored server-side and would
+  // return EVERY account's positions); the symbol filter stays client-side.
+  const result = (await client.post("/admin/positions/query", {
+    accountFilter: { accounts: [params.accountId] },
+  })) as {
+    positions: Array<{ id: number; A: number; s: string; S: string; q: number }>;
   };
 
-  let positions = result.positions || [];
+  // Ownership belt-and-braces: this loop fires a closing MARKET order per row, so never act
+  // on a record that does not belong to the requested account, whatever the server returned.
+  let positions = (result.positions || []).filter((p) => p.A === params.accountId);
 
   // Client-side symbol filter
   if (params.symbol) {
@@ -379,19 +393,22 @@ export const closeBySchema = z.object({
 });
 
 export async function closeBy(client: RestClient, params: z.infer<typeof closeBySchema>) {
-  // Get position details to determine symbol and quantity
+  // Get position details to determine symbol and quantity. accountFilter scoping plus an
+  // ownership check on BOTH legs — a bare { A } body is ignored server-side, and a close-by
+  // must never pair a position with another account's record.
   const result = (await client.post("/admin/positions/query", {
-    A: params.accountId,
-  })) as { positions: Array<{ id: number; s: string; S: string; q: number }> };
+    accountFilter: { accounts: [params.accountId] },
+  })) as { positions: Array<{ id: number; A: number; s: string; S: string; q: number }> };
 
-  const position = (result.positions || []).find((p) => p.id === params.positionId);
+  const owned = (result.positions || []).filter((p) => p.A === params.accountId);
+  const position = owned.find((p) => p.id === params.positionId);
   if (!position) {
-    throw new Error(`Position ${params.positionId} not found`);
+    throw new Error(`Position ${params.positionId} not found on account ${params.accountId}`);
   }
 
-  const byPosition = (result.positions || []).find((p) => p.id === params.positionById);
+  const byPosition = owned.find((p) => p.id === params.positionById);
   if (!byPosition) {
-    throw new Error(`Position ${params.positionById} not found`);
+    throw new Error(`Position ${params.positionById} not found on account ${params.accountId}`);
   }
 
   if (position.s !== byPosition.s) {
@@ -649,8 +666,8 @@ export async function getAccountSummary(
     client.post("/admin/accounts/states/query", {
       accountFilter: { accounts: [params.accountId] },
     }),
-    client.post("/admin/positions/query", { A: params.accountId }),
-    client.post("/admin/orders/active", { A: params.accountId }),
+    client.post("/admin/positions/query", { accountFilter: { accounts: [params.accountId] } }),
+    client.post("/admin/orders/active", { accountFilter: { accounts: [params.accountId] } }),
   ]);
 
   return { state, positions, orders };
@@ -816,6 +833,9 @@ export async function updatePositionCommit(
   client: RestClient,
   params: z.infer<typeof updatePositionCommitSchema>,
 ) {
+  // This endpoint carries no ETag contract; clear anything a previous response left cached on
+  // this path so RestClient does not attach a stray If-Match.
+  client.setEtag("/admin/positions/edit", "");
   return client.post(
     "/admin/positions/edit",
     takeCommit(params.commitToken, "update_position"),
@@ -867,6 +887,9 @@ export async function deletePositionCommit(
   client: RestClient,
   params: z.infer<typeof deletePositionCommitSchema>,
 ) {
+  // This endpoint carries no ETag contract; clear anything a previous response left cached on
+  // this path so RestClient does not attach a stray If-Match.
+  client.setEtag("/admin/positions/delete", "");
   return client.post(
     "/admin/positions/delete",
     takeCommit(params.commitToken, "delete_position"),
@@ -927,6 +950,9 @@ export async function updateTradeCommit(
   client: RestClient,
   params: z.infer<typeof updateTradeCommitSchema>,
 ) {
+  // This endpoint carries no ETag contract; clear anything a previous response left cached on
+  // this path so RestClient does not attach a stray If-Match.
+  client.setEtag("/admin/trades/edit", "");
   return client.post(
     "/admin/trades/edit",
     takeCommit(params.commitToken, "update_trade"),
@@ -977,6 +1003,9 @@ export async function deleteTradeCommit(
   client: RestClient,
   params: z.infer<typeof deleteTradeCommitSchema>,
 ) {
+  // This endpoint carries no ETag contract; clear anything a previous response left cached on
+  // this path so RestClient does not attach a stray If-Match.
+  client.setEtag("/admin/trades/delete", "");
   return client.post(
     "/admin/trades/delete",
     takeCommit(params.commitToken, "delete_trade"),

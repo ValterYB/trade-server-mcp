@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
 import { accountFilterSchema, buildAccountFilter } from "./filters.js";
 import { fetchRecord } from "./lookup.js";
-import { readFresh, stripServerManaged, commitResourceWrite } from "./resource-write.js";
+import { readWithEtag, stripServerManaged, commitResourceWrite } from "./resource-write.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 import { completenessMessage } from "../../validation.js";
 
@@ -245,8 +245,9 @@ export async function setAccountPasswordPlan(
   params: z.infer<typeof setAccountPasswordPlanSchema>,
 ) {
   const path = `/admin/accounts/get/${params.accountId}`;
-  const current = await readFresh(client, path);
-  const etag = client.getEtag(path);
+  // Body and ETag from the same response — reading the ETag back out of the shared cache
+  // would race with any concurrent read of the same account (see readWithEtag).
+  const { data: current, etag } = await readWithEtag(client, path);
   const object = stripServerManaged({ ...current, password: params.password });
   return {
     accountId: params.accountId,

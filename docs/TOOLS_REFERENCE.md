@@ -7,7 +7,10 @@ The complete reference for every tool the Trade Server MCP exposes, in both mode
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
-server), a parameter table, and one realistic example call. Tools are grouped by category.
+server), a parameter table, and one realistic example call. Tools are grouped by category;
+the newer tool families (resource CRUD, bulk operations, book and chart maintenance,
+reporting) are documented as summary tables instead — their registered descriptions are
+always visible in your MCP client.
 Each mode also exposes [MCP resources](#resources-client-mode), listed at the end of its
 section. Differences between same-named tools in the two modes are summarized in
 [Cross-mode differences](#cross-mode-differences).
@@ -612,7 +615,7 @@ Admin-mode tools have **server-wide scope**: tools that act on an account take a
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
 the persona guide.
 
-### Trading (31 tools)
+### Trading
 
 The four money-movers — placing an order, closing a position, a hedged close, and closing
 everything — are **confirm-before-execute**: each is a `*_plan` + `*_commit` pair. The `*_plan`
@@ -1004,7 +1007,7 @@ Example:
 }
 ```
 
-### Account (13 tools)
+### Account
 
 #### `get_account_state`
 
@@ -1126,7 +1129,7 @@ Example:
 {}
 ```
 
-### Market data (16 tools)
+### Market data
 
 #### `get_quote`
 
@@ -1268,7 +1271,7 @@ Example:
 }
 ```
 
-### Configuration (67 tools)
+### Configuration
 
 #### `get_groups`
 
@@ -1681,7 +1684,8 @@ matter in practice:
   (`marginCheck: false`); client orders are always margin-checked by the server.
 
 - **Client-only tool:** `get_limits` (your session's API rate limits) exists only in client
-  mode. The 14 admin-only tools are listed in [Admin Mode](./ADMIN_MODE.md#admin-only-tools).
+  mode. 99 of the 128 admin tools are admin-only; a when-to-use guide for the most common
+  ones is in [Admin Mode](./ADMIN_MODE.md#admin-only-tools).
 
 - **Resources:** client mode exposes 1 resource (`trade://symbols`, scoped to your account);
   admin mode exposes 4 (`trade://symbols`, `trade://groups`, `trade://accounts`,

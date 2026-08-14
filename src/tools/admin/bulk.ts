@@ -12,7 +12,7 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
-import { stripServerManaged } from "./resource-write.js";
+import { redactSecrets, stripServerManaged } from "./resource-write.js";
 
 type Rec = Record<string, unknown>;
 
@@ -40,6 +40,8 @@ interface BulkSpec {
   idKey: string;
   /** Human-readable field used for name-glob selection and previews, when the record has one. */
   nameField?: string;
+  /** Fields the edit endpoint requires on every record; a source record missing one aborts the plan. */
+  requiredFields?: string[];
   editPath: string;
   deletePath: string;
 }
@@ -101,6 +103,9 @@ const SPECS: Record<BulkResource, BulkSpec> = {
     idKey: "accountId",
     editPath: "/admin/managers/batch/edit",
     deletePath: "/admin/managers/batch/delete",
+    // /admin/managers/edit rejects a record without `groups` as "Invalid body" (seen live), and
+    // at least one manager read endpoint omits it — refuse to batch-post an incomplete record.
+    requiredFields: ["groups"],
   },
   liquidity: {
     queryPath: "/admin/liquidity/query",
@@ -181,25 +186,63 @@ export async function planBulkUpdate(
     return { resource, matched: 0, message: "Nothing matched that selection — nothing to do." };
   }
 
+  // Server-managed fields are stripped from every posted object, so an update aimed at one can
+  // never take effect — drop such keys BEFORE change detection (otherwise records would be
+  // selected for a pure no-op write that still bumps their version) and report them.
+  const effective = stripServerManaged(updates);
+  const ignored = Object.keys(updates).filter((k) => !(k in effective));
+  const ignoredNote =
+    ignored.length > 0
+      ? {
+          ignoredReadOnlyFields: ignored,
+          note: `The server assigns ${ignored.join(", ")} itself and rejects a write that sets them, so they are not part of this change.`,
+        }
+      : {};
+  if (Object.keys(effective).length === 0) {
+    return {
+      resource,
+      matched: matched.length,
+      willChange: 0,
+      ...ignoredNote,
+      message: "Every requested field is server-managed — nothing to do.",
+    };
+  }
+
   // Only records that actually change are sent: a no-op write would still bump versions.
   const changed = matched.filter((r) =>
-    Object.keys(updates).some((k) => !sameValue(r[k], updates[k])),
+    Object.keys(effective).some((k) => !sameValue(r[k], effective[k])),
   );
   if (changed.length === 0) {
     return {
       resource,
       matched: matched.length,
       willChange: 0,
+      ...ignoredNote,
       message: "Every matched record already holds those values — nothing to do.",
     };
   }
 
-  const objects = changed.map((r) => stripServerManaged({ ...r, ...updates }));
+  for (const req of spec.requiredFields ?? []) {
+    const incomplete = changed.filter((r) => !(req in r));
+    if (incomplete.length > 0) {
+      throw new Error(
+        `Cannot batch-edit ${resource}: the ${spec.queryPath} response omits the required \`${req}\` field for ${incomplete.length} record(s) (${incomplete
+          .slice(0, 5)
+          .map((r) => label(spec, r))
+          .join(
+            ", ",
+          )}). Posting an incomplete record would be rejected — use the single-record update tool instead.`,
+      );
+    }
+  }
+
+  const objects = changed.map((r) => stripServerManaged({ ...r, ...effective }));
   return {
     resource,
     matched: matched.length,
     willChange: changed.length,
-    setting: updates,
+    setting: redactSecrets(effective),
+    ...ignoredNote,
     affected: previewList(changed.map((r) => label(spec, r))),
     unchangedSkipped: matched.length - changed.length,
     commitToken: issuePlan({ path: spec.editPath, objects }, "bulk_update"),

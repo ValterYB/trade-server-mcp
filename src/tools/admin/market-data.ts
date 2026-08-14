@@ -403,6 +403,9 @@ export async function updateCandleCommit(
   client: RestClient,
   params: z.infer<typeof updateCandleCommitSchema>,
 ) {
+  // No ETag contract on this endpoint — clear anything cached on the path so RestClient does
+  // not attach a stray If-Match.
+  client.setEtag("/admin/charts/edit", "");
   return client.post("/admin/charts/edit", takeCommit(params.commitToken, "update_candle"), {
     retryOnConnectionError: false,
   });
@@ -450,6 +453,9 @@ export async function deleteCandleCommit(
   client: RestClient,
   params: z.infer<typeof deleteCandleCommitSchema>,
 ) {
+  // No ETag contract on this endpoint — clear anything cached on the path so RestClient does
+  // not attach a stray If-Match.
+  client.setEtag("/admin/charts/delete", "");
   return client.post("/admin/charts/delete", takeCommit(params.commitToken, "delete_candle"), {
     retryOnConnectionError: false,
   });
@@ -512,6 +518,9 @@ export async function bulkUpdateCandlesCommit(
   client: RestClient,
   params: z.infer<typeof bulkUpdateCandlesCommitSchema>,
 ) {
+  // No ETag contract on this endpoint — clear anything cached on the path so RestClient does
+  // not attach a stray If-Match.
+  client.setEtag("/admin/charts/batch/edit", "");
   return client.post(
     "/admin/charts/batch/edit",
     takeCommit(params.commitToken, "bulk_update_candles"),
@@ -556,6 +565,9 @@ export async function bulkDeleteCandlesCommit(
   client: RestClient,
   params: z.infer<typeof bulkDeleteCandlesCommitSchema>,
 ) {
+  // No ETag contract on this endpoint — clear anything cached on the path so RestClient does
+  // not attach a stray If-Match.
+  client.setEtag("/admin/charts/batch/delete", "");
   return client.post(
     "/admin/charts/batch/delete",
     takeCommit(params.commitToken, "bulk_delete_candles"),

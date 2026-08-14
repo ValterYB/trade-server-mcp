@@ -34,7 +34,9 @@ Full setup, including copy-paste config for Claude Desktop and Claude Code, is i
 
 ## Admin-only tools
 
-Fourteen tools exist only in admin mode. When to reach for each:
+**99 of the 128 admin tools have no client-mode counterpart** — the full set is in the
+[Tools Reference](./TOOLS_REFERENCE.md#admin-mode-128-tools). The longest-standing ones, and
+when to reach for each:
 
 | Tool | Use it when... |
 |---|---|
@@ -53,8 +55,8 @@ Fourteen tools exist only in admin mode. When to reach for each:
 | `get_indicator` | You want a technical indicator (RSI, MACD, EMA, ...) computed over a symbol's candles. |
 | `force_delete_order` | **Last resort only:** a stuck or corrupted order survives `cancel_order`. This bypasses the normal order lifecycle. |
 
-(Conversely, one tool is client-only: `get_limits`. Everything else exists in both modes —
-with the scope and parameter differences listed in
+(Conversely, one tool is client-only: `get_limits`. The 29 tools whose names exist in both
+modes differ in scope and parameters as listed in
 [Cross-mode differences](./TOOLS_REFERENCE.md#cross-mode-differences).)
 
 ## Managing order routing

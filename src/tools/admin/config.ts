@@ -1,17 +1,8 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
 import { accountFilterSchema, buildAccountFilter } from "./filters.js";
-import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
-import {
-  ResourceSpec,
-  planResourceEdit,
-  planResourceDelete,
-  planResourceCreate,
-  commitResourceWrite,
-  makeResourceTools,
-  readFresh,
-  stripServerManaged,
-} from "./resource-write.js";
+import { issuePlan } from "../../preview/plan-commit.js";
+import { ResourceSpec, makeResourceTools, readFresh, readWithEtag } from "./resource-write.js";
 
 // === RESOURCE SPECS + GENERATED PLAN/COMMIT PAIRS ===
 //
@@ -138,12 +129,14 @@ export async function getClients(client: RestClient) {
 // path — RestClient keys ETags by path, so without bridging it every routing write fails with
 // PRECONDITION_FAILED. Read the current config and carry its ETag onto the edit path.
 async function readRoutingForWrite(client: RestClient) {
-  const current = (await readFresh(client, "/admin/routing/query")) as {
+  // Take the ETag from this exact response (not the shared per-path cache) and bridge it onto
+  // the edit path — /admin/routing/edit always requires If-Match.
+  const { data, etag } = await readWithEtag(client, "/admin/routing/query");
+  const current = data as unknown as {
     version: number;
     routing: Array<{ a: unknown[]; f?: unknown[] }>;
   };
-  const etag = client.getEtag("/admin/routing/query");
-  if (etag) client.setEtag("/admin/routing/edit", etag);
+  client.setEtag("/admin/routing/edit", etag ?? "");
   return current;
 }
 
@@ -171,7 +164,15 @@ export async function setOrderRouting(
   client: RestClient,
   params: z.infer<typeof setOrderRoutingSchema>,
 ) {
-  await readRoutingForWrite(client);
+  // The caller's `version` is their statement of what they believe the config to be. If the
+  // config moved since their get_order_routing, silently bridging the FRESH ETag would let a
+  // stale replacement overwrite the concurrent change — so fail loudly instead.
+  const current = await readRoutingForWrite(client);
+  if (current.version !== params.version) {
+    throw new Error(
+      `Routing configuration changed since it was read (you have version ${params.version}, the server is at ${current.version}). Re-read it with get_order_routing and re-apply your change.`,
+    );
+  }
   return client.post("/admin/routing/edit", {
     version: params.version,
     routing: params.routing,

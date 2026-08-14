@@ -96,7 +96,7 @@ test("the diff only lists fields that the write will actually carry", async () =
 });
 
 // ── Finding 9 ────────────────────────────────────────────────────────────────
-test("willCreate shows the stripped object, matching what gets posted", async () => {
+test("willCreate matches the posted payload, with secrets masked for display", async () => {
   respond = () => ACCOUNT;
   const plan = (await cfg.createAccountPlan(client(), {
     fromId: 1000,
@@ -107,10 +107,14 @@ test("willCreate shows the stripped object, matching what gets posted", async ()
   assert.equal(plan.willCreate.timePasswordLastChanged, undefined);
   assert.equal(plan.willCreate.id, 0);
   assert.equal(plan.willCreate.version, 0);
+  // the plaintext initial password must never be echoed back in the preview...
+  assert.ok(!JSON.stringify(plan).includes('pw"'));
+  assert.match(String(plan.willCreate.password), /hidden/);
 
   respond = () => ({ ok: true });
   await cfg.createAccountCommit(client(), { commitToken: plan.commitToken });
-  assert.deepEqual(lastBody(), plan.willCreate); // preview == payload
+  // ...while the posted payload carries the real value; everything else matches the preview
+  assert.deepEqual(lastBody(), { ...plan.willCreate, password: "pw" });
 });
 
 // ── Finding 1 ────────────────────────────────────────────────────────────────

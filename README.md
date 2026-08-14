@@ -294,7 +294,7 @@ everyone else.)
                     v                               v
          +--------------------+         +---------------------+
          | register-admin.ts  |         | register-client.ts  |
-         | 128 tools, 4 res.   |         | 30 tools, 1 res.    |
+         | 128 tools, 4 res.  |         | 30 tools, 1 res.    |
          +---------+----------+         +----------+----------+
                    |                               |
                    v                               v

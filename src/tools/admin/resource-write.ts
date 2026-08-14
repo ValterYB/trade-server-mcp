@@ -32,6 +32,20 @@ export function stripServerManaged(o: Rec): Rec {
   return r;
 }
 
+// Top-level secret fields that must never be echoed back in a preview (they still travel to the
+// server in the stashed commit payload). Matches set_account_password_plan's "(hidden)" handling,
+// so the generic account/client paths cannot become an unredacted way around it. Deliberately
+// top-level only: liquidity-connector session parameters are shown unredacted by owner decision.
+const SECRET_FIELDS = ["password"];
+export const HIDDEN = "(hidden — the value you supplied is kept and sent to the server)";
+
+/** Copy of `o` with secret fields masked for display. */
+export function redactSecrets(o: Rec): Rec {
+  const r = { ...o };
+  for (const k of SECRET_FIELDS) if (k in r) r[k] = HIDDEN;
+  return r;
+}
+
 /**
  * Read a record together with the ETag of that exact response.
  *
@@ -88,7 +102,9 @@ export async function planResourceEdit(
   for (const key of Object.keys(updates)) {
     if (ignored.includes(key)) continue;
     if (!sameValue(current[key], object[key])) {
-      changes[key] = { from: current[key], to: object[key] };
+      changes[key] = SECRET_FIELDS.includes(key)
+        ? { from: HIDDEN, to: HIDDEN }
+        : { from: current[key], to: object[key] };
     }
   }
 
@@ -152,8 +168,9 @@ export async function planResourceDelete(
  * overrides applied) with id/version forced to 0, and stash it for commit. Creates carry NO
  * If-Match (a new resource has no version to match).
  *
- * `willCreate` is the stripped object — the exact body that will be posted — so a clone cannot
- * show fields in the preview that the created record will not have.
+ * `willCreate` is the stripped object — the exact body that will be posted, except that secret
+ * fields are masked for display — so a clone cannot show fields in the preview that the created
+ * record will not have.
  */
 export async function planResourceCreate(
   client: RestClient,
@@ -161,14 +178,21 @@ export async function planResourceCreate(
   opts: { fromId?: number; object?: Rec; overrides?: Rec },
   tool: string,
 ) {
-  const base =
-    opts.fromId != null ? await readFresh(client, spec.getPath(opts.fromId)) : (opts.object ?? {});
-  const object = stripServerManaged({ ...base, ...(opts.overrides ?? {}), id: 0, version: 0 });
+  // The tool descriptions promise "clone via fromId AND/OR pass a full object", so when both are
+  // given the template is the base and the explicit object overlays it (overrides win last).
+  const template = opts.fromId != null ? await readFresh(client, spec.getPath(opts.fromId)) : {};
+  const object = stripServerManaged({
+    ...template,
+    ...(opts.object ?? {}),
+    ...(opts.overrides ?? {}),
+    id: 0,
+    version: 0,
+  });
   const commitToken = issuePlan({ path: spec.editPath, object }, tool); // no etag → no If-Match
   return {
     resource: spec.label,
     action: "create",
-    willCreate: object,
+    willCreate: redactSecrets(object),
     commitToken,
     disclosure: `You are confirming the LIVE CREATION of a new ${spec.label} via an AI assistant. Review the object, then call the matching *_commit with this commitToken. Nothing is written until you commit.`,
   };
@@ -190,7 +214,10 @@ export async function commitResourceWrite(client: RestClient, commitToken: strin
     etag?: string | null;
   };
   client.setEtag(plan.path, plan.etag ?? "");
-  return client.post(plan.path, plan.object ?? plan.body ?? {});
+  // Never transport-retry: a connection reset does not prove non-delivery. For creates (no
+  // If-Match) a retry could mint a duplicate live record; for updates/deletes it could only
+  // turn into a confusing 412 after the delivered first attempt bumped the version.
+  return client.post(plan.path, plan.object ?? plan.body ?? {}, { retryOnConnectionError: false });
 }
 
 /**
@@ -202,7 +229,7 @@ export async function commitResourceWrite(client: RestClient, commitToken: strin
  */
 export function makeResourceTools(
   spec: ResourceSpec,
-  tools: { update: string; delete: string; create?: string },
+  tools: { update: string; delete: string; create: string },
 ) {
   return {
     planEdit: (client: RestClient, id: number, updates: Rec) =>
@@ -214,8 +241,8 @@ export function makeResourceTools(
     commitDelete: (client: RestClient, commitToken: string) =>
       commitResourceWrite(client, commitToken, tools.delete),
     planCreate: (client: RestClient, opts: { fromId?: number; object?: Rec; overrides?: Rec }) =>
-      planResourceCreate(client, spec, opts, tools.create ?? `create_${spec.idKey}`),
+      planResourceCreate(client, spec, opts, tools.create),
     commitCreate: (client: RestClient, commitToken: string) =>
-      commitResourceWrite(client, commitToken, tools.create ?? `create_${spec.idKey}`),
+      commitResourceWrite(client, commitToken, tools.create),
   };
 }
