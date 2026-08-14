@@ -4,7 +4,6 @@ import { RestClient } from "../rest-client.js";
 import { StaticCredentials } from "../auth/admin-auth.js";
 import * as trd from "../tools/admin/trading.js";
 import * as cfg from "../tools/admin/config.js";
-import * as acct from "../tools/admin/account.js";
 import * as bulk from "../tools/admin/bulk.js";
 
 // Regression guards for the second review round (full-branch multi-agent review).

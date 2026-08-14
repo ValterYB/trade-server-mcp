@@ -319,8 +319,6 @@ export const updateSymbolCommit = (
 // POST /admin/groups/delete takes { groupId, version } and also requires If-Match. Both bridge
 // the ETag captured from the GET onto the write path (RestClient keys ETags by path).
 
-type AdminRecord = Record<string, unknown>;
-
 export const updateGroupPlanSchema = z.object({
   groupId: z.number().describe("ID of the group to modify (from get_groups)"),
   updates: z
