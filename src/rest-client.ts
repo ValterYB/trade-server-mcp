@@ -293,6 +293,13 @@ export class RestClient {
   }
 
   /** Get stored etag */
+  /**
+   * The ETag currently cached for a path.
+   *
+   * Kept as part of the ETag contract (and asserted by the tests) even though the write paths now
+   * carry the version through {@link getWithEtag} instead of reading it back out of this cache —
+   * reading it back was the race fixed in this release.
+   */
   getEtag(path: string): string | undefined {
     return this.etags.get(path);
   }

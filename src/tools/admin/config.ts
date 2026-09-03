@@ -1,8 +1,15 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
 import { accountFilterSchema, buildAccountFilter } from "./filters.js";
-import { issuePlan } from "../../preview/plan-commit.js";
-import { ResourceSpec, makeResourceTools, readFresh, readWithEtag } from "./resource-write.js";
+import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
+import {
+  ResourceSpec,
+  makeResourceTools,
+  readFresh,
+  readWithEtag,
+  redactSecrets,
+  stripServerManaged,
+} from "./resource-write.js";
 
 // === RESOURCE SPECS + GENERATED PLAN/COMMIT PAIRS ===
 //
@@ -125,20 +132,57 @@ export async function getClients(client: RestClient) {
   return client.get("/admin/clients/query");
 }
 
-// /admin/routing/edit ALWAYS requires If-Match, and the ETag only ever arrives on the /query
-// path — RestClient keys ETags by path, so without bridging it every routing write fails with
-// PRECONDITION_FAILED. Read the current config and carry its ETag onto the edit path.
+interface RoutingRule {
+  a: unknown[];
+  f?: unknown[];
+}
+
 async function readRoutingForWrite(client: RestClient) {
-  // Take the ETag from this exact response (not the shared per-path cache) and bridge it onto
-  // the edit path — /admin/routing/edit always requires If-Match.
+  // Take the ETag from this exact response (not the shared per-path cache) so the version cannot
+  // be swapped with a concurrent read's; it is bridged onto the edit path at commit time.
   const { data, etag } = await readWithEtag(client, "/admin/routing/query");
   const current = data as unknown as {
     version: number;
-    routing: Array<{ a: unknown[]; f?: unknown[] }>;
+    routing: RoutingRule[];
   };
-  client.setEtag("/admin/routing/edit", etag ?? "");
-  return current;
+  return { ...current, etag };
 }
+
+/**
+ * Stash a routing change for confirmation.
+ *
+ * Routing decides how every client order is filled, so these writes are confirm-before-execute like
+ * the other destructive config writes. The plan carries the rule list it computed AND the ETag of
+ * the read it computed it from, so the commit applies exactly the change that was previewed, and a
+ * concurrent edit in between is rejected by If-Match rather than silently overwritten.
+ */
+function planRouting(
+  current: { version: number; etag: string | null },
+  routing: RoutingRule[],
+  tool: string,
+) {
+  return issuePlan({ version: current.version, routing, etag: current.etag }, tool);
+}
+
+async function commitRouting(client: RestClient, commitToken: string, tool: string) {
+  const plan = takeCommit(commitToken, tool) as {
+    version: number;
+    routing: RoutingRule[];
+    etag: string | null;
+  };
+  // /admin/routing/edit ALWAYS requires If-Match, and the ETag only ever arrives on the /query
+  // path — RestClient keys ETags by path, so without bridging it every routing write fails with
+  // PRECONDITION_FAILED.
+  client.setEtag("/admin/routing/edit", plan.etag ?? "");
+  return client.post(
+    "/admin/routing/edit",
+    { version: plan.version, routing: plan.routing },
+    { retryOnConnectionError: false },
+  );
+}
+
+const ROUTING_DISCLOSURE =
+  "You are confirming a LIVE change to server-wide ORDER ROUTING via an AI assistant. These rules decide how every client order is executed. Review the before/after rule list, then call the matching *_commit with this commitToken. Nothing is written until you commit.";
 
 export const getOrderRoutingSchema = z.object({});
 
@@ -146,7 +190,7 @@ export async function getOrderRouting(client: RestClient) {
   return client.get("/admin/routing/query");
 }
 
-export const setOrderRoutingSchema = z.object({
+export const setOrderRoutingPlanSchema = z.object({
   version: z.number().describe("Current routing config version (get from get_order_routing)"),
   routing: z
     .array(
@@ -157,12 +201,12 @@ export const setOrderRoutingSchema = z.object({
         f: z.array(z.record(z.unknown())).optional().describe("Filters array (optional)"),
       }),
     )
-    .describe("Array of routing rules"),
+    .describe("Array of routing rules — REPLACES the entire rule list"),
 });
 
-export async function setOrderRouting(
+export async function setOrderRoutingPlan(
   client: RestClient,
-  params: z.infer<typeof setOrderRoutingSchema>,
+  params: z.infer<typeof setOrderRoutingPlanSchema>,
 ) {
   // The caller's `version` is their statement of what they believe the config to be. If the
   // config moved since their get_order_routing, silently bridging the FRESH ETag would let a
@@ -173,13 +217,26 @@ export async function setOrderRouting(
       `Routing configuration changed since it was read (you have version ${params.version}, the server is at ${current.version}). Re-read it with get_order_routing and re-apply your change.`,
     );
   }
-  return client.post("/admin/routing/edit", {
-    version: params.version,
-    routing: params.routing,
-  });
+  return {
+    replacingRules: (current.routing || []).length,
+    withRules: params.routing.length,
+    currentRouting: current.routing,
+    newRouting: params.routing,
+    commitToken: planRouting(current, params.routing, "set_order_routing"),
+    disclosure: ROUTING_DISCLOSURE,
+  };
 }
 
-export const addRoutingRuleSchema = z.object({
+export const setOrderRoutingCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by set_order_routing_plan"),
+});
+
+export const setOrderRoutingCommit = (
+  client: RestClient,
+  params: z.infer<typeof setOrderRoutingCommitSchema>,
+) => commitRouting(client, params.commitToken, "set_order_routing");
+
+export const addRoutingRulePlanSchema = z.object({
   actions: z
     .array(z.record(z.unknown()))
     .describe("Actions array (e.g. [{type:'Execute',connectorId:1}])"),
@@ -189,24 +246,36 @@ export const addRoutingRuleSchema = z.object({
     .describe("Filters array (optional, e.g. [{type:'Symbol',value:'EURUSD'}])"),
 });
 
-export async function addRoutingRule(
+export async function addRoutingRulePlan(
   client: RestClient,
-  params: z.infer<typeof addRoutingRuleSchema>,
+  params: z.infer<typeof addRoutingRulePlanSchema>,
 ) {
   const current = await readRoutingForWrite(client);
 
-  const newRule: { a: unknown[]; f?: unknown[] } = { a: params.actions };
+  const newRule: RoutingRule = { a: params.actions };
   if (params.filters) newRule.f = params.filters;
 
   const updatedRouting = [...(current.routing || []), newRule];
-
-  return client.post("/admin/routing/edit", {
-    version: current.version,
-    routing: updatedRouting,
-  });
+  return {
+    adding: newRule,
+    atIndex: updatedRouting.length - 1,
+    rulesBefore: (current.routing || []).length,
+    rulesAfter: updatedRouting.length,
+    commitToken: planRouting(current, updatedRouting, "add_routing_rule"),
+    disclosure: ROUTING_DISCLOSURE,
+  };
 }
 
-export const removeRoutingRuleSchema = z.object({
+export const addRoutingRuleCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by add_routing_rule_plan"),
+});
+
+export const addRoutingRuleCommit = (
+  client: RestClient,
+  params: z.infer<typeof addRoutingRuleCommitSchema>,
+) => commitRouting(client, params.commitToken, "add_routing_rule");
+
+export const removeRoutingRulePlanSchema = z.object({
   index: z
     .number()
     .describe(
@@ -214,9 +283,9 @@ export const removeRoutingRuleSchema = z.object({
     ),
 });
 
-export async function removeRoutingRule(
+export async function removeRoutingRulePlan(
   client: RestClient,
-  params: z.infer<typeof removeRoutingRuleSchema>,
+  params: z.infer<typeof removeRoutingRulePlanSchema>,
 ) {
   const current = await readRoutingForWrite(client);
 
@@ -227,16 +296,26 @@ export async function removeRoutingRule(
     );
   }
 
-  const removed = routing[params.index];
+  const removing = routing[params.index];
   const updatedRouting = routing.filter((_, i) => i !== params.index);
-
-  await client.post("/admin/routing/edit", {
-    version: current.version,
-    routing: updatedRouting,
-  });
-
-  return { removed, remainingRules: updatedRouting.length };
+  return {
+    removing,
+    atIndex: params.index,
+    rulesBefore: routing.length,
+    rulesAfter: updatedRouting.length,
+    commitToken: planRouting(current, updatedRouting, "remove_routing_rule"),
+    disclosure: ROUTING_DISCLOSURE,
+  };
 }
+
+export const removeRoutingRuleCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by remove_routing_rule_plan"),
+});
+
+export const removeRoutingRuleCommit = (
+  client: RestClient,
+  params: z.infer<typeof removeRoutingRuleCommitSchema>,
+) => commitRouting(client, params.commitToken, "remove_routing_rule");
 
 export const getLiquidityConnectorsSchema = z.object({});
 
@@ -763,7 +842,10 @@ export async function createManagerPlan(
     params.fromId != null
       ? await readFresh(client, `/admin/managers/get/${params.fromId}`)
       : denyAllPermissions(await readFresh(client, "/admin/managers/self"));
-  const next: Record<string, unknown> = {
+  // Same treatment as the other six creates: server-assigned fields never go back out, and the
+  // preview is the payload with secrets masked — this is the one create that used to stash and
+  // echo the raw object.
+  const next: Record<string, unknown> = stripServerManaged({
     ...template,
     ...(params.permissions ?? {}),
     accountId: params.accountId,
@@ -771,11 +853,11 @@ export async function createManagerPlan(
     // /admin/managers/self omits `groups`, but the edit endpoint requires it — without it the
     // server rejects the body as "Invalid body" (observed live).
     groups: params.groups ?? (template.groups as string | undefined) ?? "*",
-  };
+  });
   return {
     resource: "manager",
     action: "create",
-    willCreate: next,
+    willCreate: redactSecrets(next),
     commitToken: issuePlan({ path: "/admin/managers/edit", object: next }, "create_manager"),
     disclosure: CREATE_MANAGER_DISCLOSURE,
   };

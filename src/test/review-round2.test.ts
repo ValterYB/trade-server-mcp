@@ -176,30 +176,46 @@ test("uncovered read tools map to their documented endpoints", async () => {
 
 // ── secrets are masked in previews, everywhere ───────────────────────────────────────────────
 
-test("update_account_plan masks a password in the diff; the payload still carries it", async () => {
+test("a password reset cannot be smuggled through the generic account update", async () => {
+  // set_account_password_* owns this write so the reset carries its own lock-out disclosure.
+  respond = () => ({ id: 1000, version: 3, groupId: 2, clientId: 2, leverage: 100 });
+  await assert.rejects(
+    () =>
+      cfg.updateAccountPlan(client(), { accountId: 1000, updates: { password: "TopSecret1!" } }),
+    /set_account_password_plan/,
+  );
+  assert.equal(
+    captured.filter((x) => x.method === "POST").length,
+    0,
+    "nothing may be written on a rejected update",
+  );
+});
+
+test("a bulk update cannot reset account passwords", async () => {
+  respond = () => ({ accounts: [{ id: 1000, version: 1, leverage: 100 }] });
+  await assert.rejects(
+    () =>
+      bulk.bulkUpdatePlan(client(), {
+        resource: "accounts",
+        ids: [1000],
+        updates: { password: "TopSecret1!" },
+      }),
+    /set_account_password_plan/,
+  );
+});
+
+test("a legitimate account update is unaffected and still masks secrets it carries", async () => {
   respond = () => ({ id: 1000, version: 3, groupId: 2, clientId: 2, leverage: 100 });
   const plan = (await cfg.updateAccountPlan(client(), {
     accountId: 1000,
-    updates: { password: "TopSecret1!" },
+    updates: { leverage: 200 },
   })) as { commitToken: string; changes: Record<string, { to: unknown }> };
-
-  assert.ok(!JSON.stringify(plan).includes("TopSecret1!"));
-  assert.match(String(plan.changes.password.to), /hidden/);
+  assert.equal(plan.changes.leverage.to, 200);
 
   captured = [];
   respond = () => ({ ok: true });
   await cfg.updateAccountCommit(client(), { commitToken: plan.commitToken });
-  assert.equal(bodyOf(0).password, "TopSecret1!"); // the server still gets the real value
-});
-
-test("bulk_update_plan masks a password in the echoed setting", async () => {
-  respond = () => ({ accounts: [{ id: 1000, version: 1, leverage: 100 }] });
-  const plan = (await bulk.bulkUpdatePlan(client(), {
-    resource: "accounts",
-    ids: [1000],
-    updates: { password: "TopSecret1!" },
-  })) as Record<string, unknown>;
-  assert.ok(!JSON.stringify(plan).includes("TopSecret1!"));
+  assert.equal(bodyOf(0).leverage, 200);
 });
 
 // ── bulk correctness ─────────────────────────────────────────────────────────────────────────
@@ -288,7 +304,7 @@ test("fetchRecord's not-found message names the account when one was supplied", 
 test("set_order_routing fails loudly when the config moved since the caller read it", async () => {
   respond = () => ({ version: 9, routing: [] }); // server is ahead of the caller's version 5
   await assert.rejects(
-    () => cfg.setOrderRouting(client(), { version: 5, routing: [] }),
+    () => cfg.setOrderRoutingPlan(client(), { version: 5, routing: [] }),
     /version 5.*server is at 9/s,
   );
   assert.equal(

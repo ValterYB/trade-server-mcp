@@ -29,8 +29,10 @@ import {
   getTradeHistory,
   getOrderHistorySchema,
   getOrderHistory,
-  cancelAllOrdersSchema,
-  cancelAllOrders,
+  cancelAllOrdersPlanSchema,
+  cancelAllOrdersPlan,
+  cancelAllOrdersCommitSchema,
+  cancelAllOrdersCommit,
   modifyOrderSltpSchema,
   modifyOrderSltp,
   forceDeleteOrderSchema,
@@ -160,12 +162,18 @@ import {
   getClients,
   getOrderRoutingSchema,
   getOrderRouting,
-  setOrderRoutingSchema,
-  setOrderRouting,
-  addRoutingRuleSchema,
-  addRoutingRule,
-  removeRoutingRuleSchema,
-  removeRoutingRule,
+  setOrderRoutingPlanSchema,
+  setOrderRoutingPlan,
+  setOrderRoutingCommitSchema,
+  setOrderRoutingCommit,
+  addRoutingRulePlanSchema,
+  addRoutingRulePlan,
+  addRoutingRuleCommitSchema,
+  addRoutingRuleCommit,
+  removeRoutingRulePlanSchema,
+  removeRoutingRulePlan,
+  removeRoutingRuleCommitSchema,
+  removeRoutingRuleCommit,
   getLiquidityConnectorsSchema,
   getLiquidityConnectors,
   getSymbolDetailsSchema,
@@ -373,11 +381,25 @@ export function registerAdminTools(
     toolHandler((params) => getOrderHistory(restClient, params)),
   );
 
-  server.tool(
-    "cancel_all_orders",
-    "Cancel all working orders on an account in one call. Optionally filter by symbol to only cancel orders for a specific instrument. Returns count of cancelled orders.",
-    cancelAllOrdersSchema.shape,
-    toolHandler((params) => cancelAllOrders(restClient, params)),
+  server.registerTool(
+    "cancel_all_orders_plan",
+    {
+      description:
+        "STEP 1 — preview cancelling ALL working orders on a client account (optionally filtered by symbol) WITHOUT executing; returns a commitToken. High-impact — needs accountId. Show the preview; only after the user confirms, call cancel_all_orders_commit. Nothing is sent.",
+      inputSchema: cancelAllOrdersPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => cancelAllOrdersPlan(restClient, params)),
+  );
+  server.registerTool(
+    "cancel_all_orders_commit",
+    {
+      description:
+        "STEP 2 — execute the cancel-all previewed by cancel_all_orders_plan. Requires the commitToken. LIVE and high-impact (cancels every matching working order) — only after explicit user confirmation.",
+      inputSchema: cancelAllOrdersCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => cancelAllOrdersCommit(restClient, params)),
   );
 
   server.registerTool(
@@ -999,25 +1021,67 @@ export function registerAdminTools(
     toolHandler(() => getOrderRouting(restClient)),
   );
 
-  server.tool(
-    "set_order_routing",
-    "Replace ALL order routing rules at once. Requires the current version number (get from get_order_routing). CAUTION: this overwrites everything. Prefer add_routing_rule/remove_routing_rule for safe atomic changes.",
-    setOrderRoutingSchema.shape,
-    toolHandler((params) => setOrderRouting(restClient, params)),
+  server.registerTool(
+    "set_order_routing_plan",
+    {
+      description:
+        "STEP 1 — preview REPLACING ALL order routing rules WITHOUT executing; returns a commitToken. Requires the current version number (get from get_order_routing). CAUTION: this overwrites every rule — prefer add_routing_rule_plan/remove_routing_rule_plan for atomic changes. Show the before/after; only after the user confirms, call set_order_routing_commit. Nothing is sent.",
+      inputSchema: setOrderRoutingPlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => setOrderRoutingPlan(restClient, params)),
+  );
+  server.registerTool(
+    "set_order_routing_commit",
+    {
+      description:
+        "STEP 2 — execute the routing replacement previewed by set_order_routing_plan. Requires the commitToken. LIVE and high-impact (decides how every client order is executed) — only after explicit user confirmation.",
+      inputSchema: setOrderRoutingCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => setOrderRoutingCommit(restClient, params)),
   );
 
-  server.tool(
-    "add_routing_rule",
-    "Add a single routing rule to the existing configuration without affecting other rules. Safer than set_order_routing. Automatically reads current version and appends.",
-    addRoutingRuleSchema.shape,
-    toolHandler((params) => addRoutingRule(restClient, params)),
+  server.registerTool(
+    "add_routing_rule_plan",
+    {
+      description:
+        "STEP 1 — preview adding a single routing rule to the existing configuration WITHOUT executing; returns a commitToken. Other rules are untouched. Show the preview; only after the user confirms, call add_routing_rule_commit. Nothing is sent.",
+      inputSchema: addRoutingRulePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => addRoutingRulePlan(restClient, params)),
+  );
+  server.registerTool(
+    "add_routing_rule_commit",
+    {
+      description:
+        "STEP 2 — execute the rule addition previewed by add_routing_rule_plan. Requires the commitToken. LIVE (changes how client orders are executed) — only after explicit user confirmation.",
+      inputSchema: addRoutingRuleCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => addRoutingRuleCommit(restClient, params)),
   );
 
-  server.tool(
-    "remove_routing_rule",
-    "Remove a single routing rule by its zero-based index. Use get_order_routing first to see current rules and their indices. Safer than set_order_routing.",
-    removeRoutingRuleSchema.shape,
-    toolHandler((params) => removeRoutingRule(restClient, params)),
+  server.registerTool(
+    "remove_routing_rule_plan",
+    {
+      description:
+        "STEP 1 — preview removing one routing rule by its zero-based index WITHOUT executing; returns a commitToken. Use get_order_routing first to see the rules and their indices. Show which rule would go; only after the user confirms, call remove_routing_rule_commit. Nothing is sent.",
+      inputSchema: removeRoutingRulePlanSchema.shape,
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => removeRoutingRulePlan(restClient, params)),
+  );
+  server.registerTool(
+    "remove_routing_rule_commit",
+    {
+      description:
+        "STEP 2 — execute the rule removal previewed by remove_routing_rule_plan. Requires the commitToken. LIVE (changes how client orders are executed) — only after explicit user confirmation.",
+      inputSchema: removeRoutingRuleCommitSchema.shape,
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    toolHandler((params) => removeRoutingRuleCommit(restClient, params)),
   );
 
   server.tool(

@@ -1,6 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { RestClient } from "../rest-client.js";
+import { PAGE_SIZE } from "../tools/admin/paging.js";
 import { StaticCredentials } from "../auth/admin-auth.js";
 import * as trd from "../tools/admin/trading.js";
 import * as cfg from "../tools/admin/config.js";
@@ -176,7 +177,10 @@ test("book lookups fall back to the query endpoint when get-by-id is not served 
 
   assert.ok(captured[0].url.includes("/admin/positions/get/")); // documented route tried first
   assert.equal(captured[1].url, "http://ts/api/v1/admin/positions/query"); // then the fallback
-  assert.deepEqual(JSON.parse(captured[1].body!), { accountFilter: { accounts: [2] } }); // narrowed
+  assert.deepEqual(JSON.parse(captured[1].body!), {
+    accountFilter: { accounts: [2] },
+    maxResults: PAGE_SIZE,
+  }); // narrowed, and paged so the record cannot fall off page 1
   assert.deepEqual(Object.keys(plan.changes), ["swaps"]);
   assert.ok(plan.commitToken);
 });

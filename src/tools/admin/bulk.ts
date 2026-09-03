@@ -12,7 +12,13 @@
 import { z } from "zod";
 import { RestClient } from "../../rest-client.js";
 import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
-import { redactSecrets, stripServerManaged } from "./resource-write.js";
+import {
+  assertNoReservedFields,
+  redactSecrets,
+  sameValue,
+  stripServerManaged,
+} from "./resource-write.js";
+import { queryAllPages } from "./paging.js";
 
 type Rec = Record<string, unknown>;
 
@@ -128,15 +134,19 @@ const globToRegExp = (pattern: string) =>
     "i",
   );
 
-const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-
-/** List every record of a resource in one request. */
+/**
+ * List every record of a resource, following the cursor to the end.
+ *
+ * Reading a single page would make the selection — and the exact count in the preview — quietly
+ * describe only the first page of the resource.
+ */
 async function loadAll(client: RestClient, spec: BulkSpec): Promise<Rec[]> {
-  const res = (await (spec.queryMethod === "GET"
-    ? client.get(spec.queryPath)
-    : client.post(spec.queryPath, {}))) as Rec;
-  const collection = res?.[spec.collectionKey];
-  return Array.isArray(collection) ? (collection as Rec[]) : [];
+  return queryAllPages(client, {
+    path: spec.queryPath,
+    method: spec.queryMethod,
+    body: {},
+    collectionKey: spec.collectionKey,
+  });
 }
 
 /** Resolve the selection: explicit ids, or a glob over the resource's name field. */
@@ -146,10 +156,12 @@ function select(
   all: Rec[],
   ids?: number[],
   namePattern?: string,
-): Rec[] {
+): { matched: Rec[]; missingIds: number[] } {
   if (ids?.length) {
     const wanted = new Set(ids.map(Number));
-    return all.filter((r) => wanted.has(Number(r[spec.idField])));
+    const matched = all.filter((r) => wanted.has(Number(r[spec.idField])));
+    const found = new Set(matched.map((r) => Number(r[spec.idField])));
+    return { matched, missingIds: ids.map(Number).filter((id) => !found.has(id)) };
   }
   if (namePattern) {
     if (!spec.nameField) {
@@ -158,7 +170,10 @@ function select(
       );
     }
     const re = globToRegExp(namePattern);
-    return all.filter((r) => re.test(String(r[spec.nameField as string] ?? "")));
+    return {
+      matched: all.filter((r) => re.test(String(r[spec.nameField as string] ?? ""))),
+      missingIds: [],
+    };
   }
   throw new Error("Select the records to change with either `ids` or `namePattern`.");
 }
@@ -181,9 +196,32 @@ export async function planBulkUpdate(
   namePattern?: string,
 ) {
   const spec = SPECS[resource];
-  const matched = select(spec, resource, await loadAll(client, spec), ids, namePattern);
+  // One bulk call could otherwise reset the password of every account on the server.
+  assertNoReservedFields(updates, `A bulk ${resource} update`);
+  const { matched, missingIds } = select(
+    spec,
+    resource,
+    await loadAll(client, spec),
+    ids,
+    namePattern,
+  );
+  // An id the server does not have must be visible in the preview: confirming "3 records" and
+  // getting 2 changed is exactly the silent partial this tool must not produce.
+  const selectionNote =
+    missingIds.length > 0
+      ? {
+          requested: ids?.length,
+          missingIds,
+          note: `${missingIds.length} requested id(s) do not exist on the server and are not part of this change: ${missingIds.join(", ")}.`,
+        }
+      : {};
   if (matched.length === 0) {
-    return { resource, matched: 0, message: "Nothing matched that selection — nothing to do." };
+    return {
+      resource,
+      matched: 0,
+      ...selectionNote,
+      message: "Nothing matched that selection — nothing to do.",
+    };
   }
 
   // Server-managed fields are stripped from every posted object, so an update aimed at one can
@@ -203,6 +241,7 @@ export async function planBulkUpdate(
       resource,
       matched: matched.length,
       willChange: 0,
+      ...selectionNote,
       ...ignoredNote,
       message: "Every requested field is server-managed — nothing to do.",
     };
@@ -217,6 +256,7 @@ export async function planBulkUpdate(
       resource,
       matched: matched.length,
       willChange: 0,
+      ...selectionNote,
       ...ignoredNote,
       message: "Every matched record already holds those values — nothing to do.",
     };
@@ -242,6 +282,7 @@ export async function planBulkUpdate(
     matched: matched.length,
     willChange: changed.length,
     setting: redactSecrets(effective),
+    ...selectionNote,
     ...ignoredNote,
     affected: previewList(changed.map((r) => label(spec, r))),
     unchangedSkipped: matched.length - changed.length,
@@ -257,9 +298,28 @@ export async function planBulkDelete(
   namePattern?: string,
 ) {
   const spec = SPECS[resource];
-  const matched = select(spec, resource, await loadAll(client, spec), ids, namePattern);
+  const { matched, missingIds } = select(
+    spec,
+    resource,
+    await loadAll(client, spec),
+    ids,
+    namePattern,
+  );
+  const selectionNote =
+    missingIds.length > 0
+      ? {
+          requested: ids?.length,
+          missingIds,
+          note: `${missingIds.length} requested id(s) do not exist on the server and will not be deleted: ${missingIds.join(", ")}.`,
+        }
+      : {};
   if (matched.length === 0) {
-    return { resource, matched: 0, message: "Nothing matched that selection — nothing to delete." };
+    return {
+      resource,
+      matched: 0,
+      ...selectionNote,
+      message: "Nothing matched that selection — nothing to delete.",
+    };
   }
   const objects = matched.map((r) => ({
     [spec.idKey]: r[spec.idField],
@@ -268,6 +328,7 @@ export async function planBulkDelete(
   return {
     resource,
     willDelete: matched.length,
+    ...selectionNote,
     affected: previewList(matched.map((r) => label(spec, r))),
     commitToken: issuePlan({ path: spec.deletePath, objects }, "bulk_delete"),
     disclosure: `You are confirming the LIVE DELETION of ${matched.length} ${resource} record(s) server-wide via an AI assistant. Review the list, then call bulk_delete_commit with this commitToken. Nothing is deleted until you commit.`,

@@ -4,10 +4,64 @@ import { issuePlan, takeCommit } from "../../preview/plan-commit.js";
 import { buildOrderPreview } from "../../preview/order-preview.js";
 import { completenessMessage, orderPriceCompleteness } from "../../validation.js";
 import { fetchRecord } from "./lookup.js";
+import { queryAllPages } from "./paging.js";
 
 // Order placement is non-idempotent: a connection reset does not prove the
 // server never received the order, so a transport-level retry could fill twice.
 const NO_TRANSPORT_RETRY = { retryOnConnectionError: false };
+
+// The book endpoints are cursor-paginated (see paging.ts). A tool that reads one page reports
+// success on a partial book — "closed 12, none left" with the rest still open — so every read
+// that is counted, acted on, or shown as a complete answer walks all the pages.
+interface BookPosition {
+  id: number;
+  A: number;
+  s: string;
+  S: string;
+  q: number;
+}
+interface BookOrder {
+  id: number;
+  A: number;
+  s: string;
+  st: string;
+}
+
+const queryPositions = (client: RestClient, body: Record<string, unknown>) =>
+  queryAllPages<BookPosition & Record<string, unknown>>(client, {
+    path: "/admin/positions/query",
+    method: "POST",
+    body,
+    collectionKey: "positions",
+  });
+
+const queryOrders = (client: RestClient, body: Record<string, unknown>) =>
+  queryAllPages<BookOrder & Record<string, unknown>>(client, {
+    path: "/admin/orders/active",
+    method: "POST",
+    body,
+    collectionKey: "orders",
+  });
+
+/**
+ * Keep only the rows that belong to `accountId`.
+ *
+ * The account filter is applied server-side, but a build that ignores it returns EVERY account's
+ * records (verified live on the bare-{ A } filter this branch replaced), and these rows are used to
+ * close positions and cancel orders. A row with no `A` at all means the wire shape is not what this
+ * guard assumes — fail loudly rather than silently filter the whole book away, which would make a
+ * close-all report success having done nothing.
+ */
+function ownedBy<T extends { A?: unknown }>(rows: T[], accountId: number, what: string): T[] {
+  const missing = rows.filter((r) => r.A === undefined || r.A === null);
+  if (missing.length > 0) {
+    throw new Error(
+      `Cannot verify ownership: ${missing.length} of ${rows.length} ${what} came back without an ` +
+        `account field, so they cannot be matched against account ${accountId}. Refusing to act.`,
+    );
+  }
+  return rows.filter((r) => Number(r.A) === Number(accountId));
+}
 
 export const placeOrderSchema = z.object({
   accountId: z.number().describe("Trading account ID (login)"),
@@ -93,7 +147,11 @@ export async function getWorkingOrders(
   if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
   if (params.symbol !== undefined) body.symbolNames = [params.symbol];
 
-  return client.post("/admin/orders/active", body);
+  const orders = await queryOrders(client, body);
+  return {
+    orders:
+      params.accountId === undefined ? orders : ownedBy(orders, params.accountId, "working orders"),
+  };
 }
 
 export const getOpenPositionsSchema = z.object({
@@ -111,7 +169,13 @@ export async function getOpenPositions(
   if (params.accountId !== undefined) body.accountFilter = { accounts: [params.accountId] };
   if (params.symbol !== undefined) body.symbolNames = [params.symbol];
 
-  return client.post("/admin/positions/query", body);
+  const positions = await queryPositions(client, body);
+  return {
+    positions:
+      params.accountId === undefined
+        ? positions
+        : ownedBy(positions, params.accountId, "open positions"),
+  };
 }
 
 export const closePositionSchema = z.object({
@@ -131,13 +195,13 @@ export async function closePosition(
   // Get position details first to know symbol and side. Scope with accountFilter — a bare
   // { A } body is silently ignored server-side and would return EVERY account's positions —
   // and double-check ownership before acting, so a stale/foreign id can never be closed.
-  const result = (await client.post("/admin/positions/query", {
-    accountFilter: { accounts: [params.accountId] },
-  })) as { positions: Array<{ id: number; A: number; s: string; S: string; q: number }> };
-
-  const position = (result.positions || []).find(
-    (p) => p.id === params.positionId && p.A === params.accountId,
+  const owned = ownedBy(
+    await queryPositions(client, { accountFilter: { accounts: [params.accountId] } }),
+    params.accountId,
+    "open positions",
   );
+
+  const position = owned.find((p) => p.id === params.positionId);
   if (!position) {
     throw new Error(`Position ${params.positionId} not found on account ${params.accountId}`);
   }
@@ -267,15 +331,13 @@ export async function cancelAllOrders(
 ) {
   // Scope with accountFilter (a bare { A } body is silently ignored server-side and would
   // return EVERY account's orders); the symbol filter stays client-side.
-  const result = (await client.post("/admin/orders/active", {
-    accountFilter: { accounts: [params.accountId] },
-  })) as {
-    orders: Array<{ id: number; A: number; s: string; st: string }>;
-  };
-
   // Ownership belt-and-braces: this loop DELETES every order it sees, so never act on a
   // record that does not belong to the requested account, whatever the server returned.
-  let orders = (result.orders || []).filter((o) => o.A === params.accountId);
+  let orders = ownedBy(
+    await queryOrders(client, { accountFilter: { accounts: [params.accountId] } }),
+    params.accountId,
+    "working orders",
+  );
 
   // Client-side symbol filter
   if (params.symbol) {
@@ -289,7 +351,11 @@ export async function cancelAllOrders(
   const results: Array<{ orderId: number; symbol: string; status: string }> = [];
   for (const order of orders) {
     try {
-      await client.post("/admin/orders/delete", { A: params.accountId, id: order.id });
+      await client.post(
+        "/admin/orders/delete",
+        { A: params.accountId, id: order.id },
+        NO_TRANSPORT_RETRY,
+      );
       results.push({ orderId: order.id, symbol: order.s, status: "cancelled" });
     } catch (e) {
       results.push({
@@ -318,15 +384,13 @@ export async function closeAllPositions(
 ) {
   // Scope with accountFilter (a bare { A } body is silently ignored server-side and would
   // return EVERY account's positions); the symbol filter stays client-side.
-  const result = (await client.post("/admin/positions/query", {
-    accountFilter: { accounts: [params.accountId] },
-  })) as {
-    positions: Array<{ id: number; A: number; s: string; S: string; q: number }>;
-  };
-
   // Ownership belt-and-braces: this loop fires a closing MARKET order per row, so never act
   // on a record that does not belong to the requested account, whatever the server returned.
-  let positions = (result.positions || []).filter((p) => p.A === params.accountId);
+  let positions = ownedBy(
+    await queryPositions(client, { accountFilter: { accounts: [params.accountId] } }),
+    params.accountId,
+    "open positions",
+  );
 
   // Client-side symbol filter
   if (params.symbol) {
@@ -593,6 +657,62 @@ export async function closeByCommit(
   return closeBy(client, closeBySchema.parse(takeCommit(params.commitToken, "close_by")));
 }
 
+export const cancelAllOrdersPlanSchema = z.object({
+  accountId: z.number().optional().describe("Trading account ID"),
+  symbol: z.string().optional().describe("Only cancel orders for this symbol"),
+});
+const CANCEL_ALL_DISCLOSURE =
+  "You are confirming that an AI assistant will CANCEL ALL working orders on a client account (optionally filtered by symbol). This is high-impact — review the list carefully. Call cancel_all_orders_commit with this commitToken to execute. Nothing is sent until you commit.";
+
+export async function cancelAllOrdersPlan(
+  client: RestClient,
+  params: z.infer<typeof cancelAllOrdersPlanSchema>,
+) {
+  const need = completenessMessage("cancel_all_orders_plan", params, [
+    { name: "accountId", label: "account ID" },
+  ]);
+  if (need) return { needMoreInfo: need };
+
+  const accountId = params.accountId as number;
+  let orders = ownedBy(
+    await queryOrders(client, { accountFilter: { accounts: [accountId] } }),
+    accountId,
+    "working orders",
+  );
+  if (params.symbol) orders = orders.filter((o) => o.s === params.symbol);
+
+  if (orders.length === 0) {
+    return {
+      accountId,
+      willCancel: 0,
+      message: "No working orders found — nothing to cancel.",
+    };
+  }
+
+  return {
+    accountId,
+    symbol: params.symbol,
+    willCancel: orders.length,
+    orders: orders.map((o) => ({ orderId: o.id, symbol: o.s, status: o.st })),
+    commitToken: issuePlan(params, "cancel_all_orders"),
+    disclosure: CANCEL_ALL_DISCLOSURE,
+  };
+}
+
+export const cancelAllOrdersCommitSchema = z.object({
+  commitToken: z.string().describe("The commitToken returned by cancel_all_orders_plan"),
+});
+
+export async function cancelAllOrdersCommit(
+  client: RestClient,
+  params: z.infer<typeof cancelAllOrdersCommitSchema>,
+) {
+  return cancelAllOrders(
+    client,
+    cancelAllOrdersSchema.parse(takeCommit(params.commitToken, "cancel_all_orders")),
+  );
+}
+
 export const closeAllPositionsPlanSchema = z.object({
   accountId: z.number().optional().describe("Trading account ID"),
   symbol: z.string().optional().describe("Only close positions for this symbol"),
@@ -662,15 +782,25 @@ export async function getAccountSummary(
   client: RestClient,
   params: z.infer<typeof getAccountSummarySchema>,
 ) {
-  const [state, positions, orders] = await Promise.all([
-    client.post("/admin/accounts/states/query", {
-      accountFilter: { accounts: [params.accountId] },
+  // A summary of "account X" must not carry another account's rows, and must not stop at page 1:
+  // either would be read back as this account's complete book.
+  const filter = { accountFilter: { accounts: [params.accountId] } };
+  const [states, positions, orders] = await Promise.all([
+    queryAllPages(client, {
+      path: "/admin/accounts/states/query",
+      method: "POST",
+      body: filter,
+      collectionKey: "states",
     }),
-    client.post("/admin/positions/query", { accountFilter: { accounts: [params.accountId] } }),
-    client.post("/admin/orders/active", { accountFilter: { accounts: [params.accountId] } }),
+    queryPositions(client, filter),
+    queryOrders(client, filter),
   ]);
 
-  return { state, positions, orders };
+  return {
+    state: { states: ownedBy(states, params.accountId, "account states") },
+    positions: { positions: ownedBy(positions, params.accountId, "open positions") },
+    orders: { orders: ownedBy(orders, params.accountId, "working orders") },
+  };
 }
 
 export const getWorkingOrderSchema = z.object({
@@ -711,6 +841,7 @@ const positionSpec = (id: number, accountId?: number) => ({
   queryPath: "/admin/positions/query",
   queryBody: accountId === undefined ? {} : { accountFilter: { accounts: [accountId] } },
   collectionKey: "positions",
+  accountId,
 });
 const tradeSpec = (id: number, accountId?: number) => ({
   label: "trade",
@@ -718,6 +849,7 @@ const tradeSpec = (id: number, accountId?: number) => ({
   queryPath: "/admin/trades/query",
   queryBody: accountId === undefined ? {} : { accountFilter: { accounts: [accountId] } },
   collectionKey: "trades",
+  accountId,
 });
 
 // friendly parameter name -> terse wire key

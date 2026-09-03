@@ -1,6 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { RestClient } from "../rest-client.js";
+import { PAGE_SIZE } from "../tools/admin/paging.js";
 import { StaticCredentials } from "../auth/admin-auth.js";
 import * as bulk from "../tools/admin/bulk.js";
 import * as md from "../tools/admin/market-data.js";
@@ -44,7 +45,7 @@ test("bulk_update selects by glob, skips already-matching records, posts one arr
     updates: { bidMarkup: 5 },
   })) as Record<string, unknown>;
 
-  assert.equal(captured[0].url, "http://ts/api/v1/admin/symbols/query"); // one listing request
+  assert.equal(captured[0].url, `http://ts/api/v1/admin/symbols/query?maxResults=${PAGE_SIZE}`); // one paged listing request
   assert.equal(plan.matched, 3); // EURUSD, EURGBP, EURJPY
   assert.equal(plan.willChange, 2); // EURJPY already has bidMarkup 5
   assert.equal(plan.unchangedSkipped, 1);
@@ -117,7 +118,7 @@ test("holidays list through the POST query endpoint", async () => {
   });
   assert.equal(captured[0].url, "http://ts/api/v1/admin/holidays/query");
   assert.equal(captured[0].method, "POST");
-  assert.equal(captured[0].body, "{}");
+  assert.equal(captured[0].body, JSON.stringify({ maxResults: PAGE_SIZE }));
 });
 
 test("a nothing-matched selection returns a message and no commit token", async () => {

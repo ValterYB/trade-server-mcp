@@ -68,7 +68,9 @@ export async function cashTransfer(client: RestClient, params: z.infer<typeof ca
   };
   if (params.comment) body.ct = params.comment;
 
-  return client.post("/admin/transfers/edit", body);
+  // Moving money is not idempotent: a connection reset does not prove the server never booked the
+  // transfer, and doSend would resend the identical body — a second live deposit or withdrawal.
+  return client.post("/admin/transfers/edit", body, { retryOnConnectionError: false });
 }
 
 // ===== cash_transfer preview/commit (confirm-before-execute) =====
@@ -200,6 +202,7 @@ export async function getTransfer(client: RestClient, params: z.infer<typeof get
       queryBody:
         params.accountId === undefined ? {} : { accountFilter: { accounts: [params.accountId] } },
       collectionKey: "transfers",
+      accountId: params.accountId,
     },
     params.transferId,
   );

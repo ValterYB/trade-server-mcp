@@ -39,6 +39,30 @@ export function stripServerManaged(o: Rec): Rec {
 const SECRET_FIELDS = ["password"];
 export const HIDDEN = "(hidden — the value you supplied is kept and sent to the server)";
 
+/**
+ * Fields a generic update must not carry because a dedicated tool owns them.
+ *
+ * A trading-account password can technically be written through the same upsert as any other
+ * field, but `set_account_password_*` exists so that a reset is confirmed with the disclosure it
+ * deserves ("anyone using the old password is locked out"). Letting it through here — or through a
+ * bulk update, where one call could reset every account on the server — would route the most
+ * sensitive write in the API past its own confirmation. Creates are unaffected: a new account
+ * requires an initial password by design.
+ */
+export const RESERVED_UPDATE_FIELDS: Record<string, string> = {
+  password:
+    "Use set_account_password_plan / set_account_password_commit to change a trading account password — it states who gets locked out and confirms the reset on its own. Remove `password` from these updates.",
+};
+
+/** Throw when an update targets a field that a dedicated tool owns. */
+export function assertNoReservedFields(updates: Rec, context: string): void {
+  for (const [field, guidance] of Object.entries(RESERVED_UPDATE_FIELDS)) {
+    if (field in updates) {
+      throw new Error(`${context} cannot set \`${field}\`. ${guidance}`);
+    }
+  }
+}
+
 /** Copy of `o` with secret fields masked for display. */
 export function redactSecrets(o: Rec): Rec {
   const r = { ...o };
@@ -94,6 +118,7 @@ export async function planResourceEdit(
   updates: Rec,
   tool: string,
 ) {
+  assertNoReservedFields(updates, `A generic ${spec.label} update`);
   const { data: current, etag } = await readWithEtag(client, spec.getPath(id));
   const object = stripServerManaged({ ...current, ...updates });
 

@@ -3,7 +3,7 @@
 The complete reference for every tool the Trade Server MCP exposes, in both modes:
 
 - **[Client mode](#client-mode-30-tools)** — 30 tools, all scoped to your own trading account.
-- **[Admin mode](#admin-mode-128-tools)** — 128 tools with server-wide scope, for broker
+- **[Admin mode](#admin-mode-132-tools)** — 132 tools with server-wide scope, for broker
   administrators.
 
 For each tool you'll find the description your AI sees (verbatim, as registered with the MCP
@@ -609,7 +609,7 @@ Client mode registers **1 MCP resource**:
 
 ---
 
-## Admin mode (128 tools)
+## Admin mode (132 tools)
 
 Admin-mode tools have **server-wide scope**: tools that act on an account take an `accountId`
 parameter, and read tools can query across all accounts. See [Admin Mode](./ADMIN_MODE.md) for
@@ -857,7 +857,7 @@ Example:
 }
 ```
 
-#### `cancel_all_orders`
+#### `cancel_all_orders_plan` / `cancel_all_orders_commit`
 
 > Cancel all working orders on an account in one call. Optionally filter by symbol to only cancel orders for a specific instrument. Returns count of cancelled orders.
 
@@ -1325,9 +1325,9 @@ Example:
 {}
 ```
 
-#### `set_order_routing`
+#### `set_order_routing_plan` / `set_order_routing_commit`
 
-> Replace ALL order routing rules at once. Requires the current version number (get from get_order_routing). CAUTION: this overwrites everything. Prefer add_routing_rule/remove_routing_rule for safe atomic changes.
+> STEP 1 previews REPLACING ALL order routing rules and returns a commitToken; STEP 2 applies it. Requires the current version number (get from get_order_routing). CAUTION: this overwrites everything. Prefer add_routing_rule_plan/remove_routing_rule_plan for safe atomic changes.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1350,9 +1350,9 @@ Example:
 }
 ```
 
-#### `add_routing_rule`
+#### `add_routing_rule_plan` / `add_routing_rule_commit`
 
-> Add a single routing rule to the existing configuration without affecting other rules. Safer than set_order_routing. Automatically reads current version and appends.
+> STEP 1 previews adding a single routing rule to the existing configuration without affecting other rules and returns a commitToken; STEP 2 applies it. Safer than set_order_routing_plan. Automatically reads current version and appends.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1368,9 +1368,9 @@ Example:
 }
 ```
 
-#### `remove_routing_rule`
+#### `remove_routing_rule_plan` / `remove_routing_rule_commit`
 
-> Remove a single routing rule by its zero-based index. Use get_order_routing first to see current rules and their indices. Safer than set_order_routing.
+> STEP 1 previews removing a single routing rule by its zero-based index and returns a commitToken; STEP 2 applies it. Use get_order_routing first to see current rules and their indices. Safer than set_order_routing_plan.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1684,7 +1684,7 @@ matter in practice:
   (`marginCheck: false`); client orders are always margin-checked by the server.
 
 - **Client-only tool:** `get_limits` (your session's API rate limits) exists only in client
-  mode. 99 of the 128 admin tools are admin-only; a when-to-use guide for the most common
+  mode. 99 of the 132 admin tools are admin-only; a when-to-use guide for the most common
   ones is in [Admin Mode](./ADMIN_MODE.md#admin-only-tools).
 
 - **Resources:** client mode exposes 1 resource (`trade://symbols`, scoped to your account);

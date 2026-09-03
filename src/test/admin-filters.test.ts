@@ -1,6 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { RestClient } from "../rest-client.js";
+import { PAGE_SIZE } from "../tools/admin/paging.js";
 import { StaticCredentials } from "../auth/admin-auth.js";
 import * as trd from "../tools/admin/trading.js";
 import * as acct from "../tools/admin/account.js";
@@ -79,7 +80,7 @@ test("account state and balances scope through accountFilter too", async () => {
 
 test("no filter supplied means no filter sent (server-wide)", async () => {
   await trd.getOpenPositions(client(), {});
-  assert.deepEqual(sent(), {});
+  assert.deepEqual(sent(), { maxResults: PAGE_SIZE }); // page size only — no account/symbol filter
 });
 
 test("repeated GETs of the same resource do not send If-None-Match (no bogus 304)", async () => {
@@ -112,7 +113,11 @@ test("routing writes bridge the ETag from /query onto /edit (If-Match is mandato
     });
   }) as any;
 
-  await cfg.setOrderRouting(client(), { version: 5, routing: [] });
+  const c = client();
+  const plan = (await cfg.setOrderRoutingPlan(c, { version: 5, routing: [] })) as {
+    commitToken: string;
+  };
+  await cfg.setOrderRoutingCommit(c, { commitToken: plan.commitToken });
   const write = calls.find((x) => x.url.endsWith("/admin/routing/edit"))!;
   assert.ok(
     calls.some((x) => x.url.endsWith("/admin/routing/query")),
