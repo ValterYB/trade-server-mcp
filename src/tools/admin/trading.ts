@@ -790,14 +790,14 @@ export async function getAccountSummary(
       path: "/admin/accounts/states/query",
       method: "POST",
       body: filter,
-      collectionKey: "states",
+      collectionKey: "accountStates",
     }),
     queryPositions(client, filter),
     queryOrders(client, filter),
   ]);
 
   return {
-    state: { states: ownedBy(states, params.accountId, "account states") },
+    state: { accountStates: ownedBy(states, params.accountId, "account states") },
     positions: { positions: ownedBy(positions, params.accountId, "open positions") },
     orders: { orders: ownedBy(orders, params.accountId, "working orders") },
   };

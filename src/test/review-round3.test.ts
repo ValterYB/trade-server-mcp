@@ -150,16 +150,18 @@ test("get_account_summary returns only the named account's rows", async () => {
   respond = (url) => {
     if (url.includes("/positions/query")) return { positions: [{ id: 1, A: 999 }] };
     if (url.includes("/orders/active")) return { orders: [{ id: 2, A: 999 }] };
-    return { states: [{ A: 999 }] };
+    return { accountStates: [{ A: 999 }] };
   };
   const s = (await trd.getAccountSummary(client(), { accountId: 7 })) as {
     positions: { positions: unknown[] };
     orders: { orders: unknown[] };
-    state: { states: unknown[] };
+    state: { accountStates: unknown[] };
   };
   assert.deepEqual(s.positions.positions, []);
   assert.deepEqual(s.orders.orders, []);
-  assert.deepEqual(s.state.states, []);
+  assert.deepEqual(s.state.accountStates, []);
+  // The wire key is accountStates — reading the wrong key would silently drop the state.
+  assert.ok(captured.some((c) => c.url.includes("/accounts/states/query")));
 });
 
 test("a book row with no account field fails loudly rather than filtering the book away", async () => {
@@ -287,4 +289,17 @@ test("create_manager strips server-managed fields and never echoes a secret", as
   assert.equal(bodyOf(0).timeCreated, undefined);
   assert.equal(bodyOf(0).accountId, 500);
   assert.equal(bodyOf(0).version, 0);
+});
+
+test("the account state for the named account survives the ownership filter", async () => {
+  respond = (url) => {
+    if (url.includes("/positions/query")) return { positions: [] };
+    if (url.includes("/orders/active")) return { orders: [] };
+    return { accountStates: [{ A: 7, b: 100000 }] };
+  };
+  const s = (await trd.getAccountSummary(client(), { accountId: 7 })) as unknown as {
+    state: { accountStates: Array<{ b: number }> };
+  };
+  assert.equal(s.state.accountStates.length, 1);
+  assert.equal(s.state.accountStates[0].b, 100000);
 });
